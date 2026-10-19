@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 底部迷你播放条 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/mini_player"
+    android:layout_width="match_parent"
+    android:layout_height="60dp"
+    android:background="@color/mini_player_bg"
+    android:visibility="gone">
+
+    <!--
+      内容单独包一层: 左右划切歌时只让这一层滑出滑入, 背景留在 mini_player 上,
+      否则整条一起位移会在边缘露出底色, 看起来像撕裂。
+    -->
+    <LinearLayout
+        android:id="@+id/mini_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="8dp">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/mini_cover"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/tab_recommend"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_placeholder"
+            app:shapeAppearanceOverlay="@style/MiniCoverShape" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/mini_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                tools:text="歌曲名" />
+
+            <TextView
+                android:id="@+id/mini_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp"
+                tools:text="歌手 - 专辑" />
+        </LinearLayout>
+
+        <ImageButton
+            android:id="@+id/mini_play"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_play"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_play_solid"
+            app:tint="@color/text_primary" />
+
+        <ImageButton
+            android:id="@+id/mini_next"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_next"
+            android:padding="11dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_skip_next"
+            app:tint="@color/text_primary" />
+    </LinearLayout>
+</LinearLayout>

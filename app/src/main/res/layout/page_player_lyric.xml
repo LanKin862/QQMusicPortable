@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放详情第 2 页 (向右翻页): 歌词详情
+     上 1/6: 歌名与歌手信息
+     中 4/6: 滚动歌词
+     下 1/6: 歌词显示设置 + 播放按钮 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- ===== 上 1/6: 歌名与歌手 ===== -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/lyric_cover"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@string/tab_recommend"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_placeholder"
+            app:shapeAppearanceOverlay="@style/MiniCoverShape" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/lyric_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_on_player"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                tools:text="歌曲名称" />
+
+            <TextView
+                android:id="@+id/lyric_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_on_player_secondary"
+                android:textSize="12sp"
+                tools:text="歌手" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- ===== 中 4/6: 滚动歌词 ===== -->
+    <com.portable.qqmusic.ui.view.LyricsView
+        android:id="@+id/lyrics_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="4"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp" />
+
+    <!-- ===== 下 1/6: 歌词显示设置 =====
+         ⚠️ 这里**刻意不放播放控制**。
+         外层 activity_now_playing.xml 的主控制栏已经有「上一首 / 播放暂停 / 下一首」,
+         歌词页再摆一套就会在竖直方向叠出两个大绿圆播放按钮, 重复且拥挤
+         (用户反馈的「软件界面整体并不美观」有一半来自这里)。
+         歌词页只保留它独有的两个开关: 字号、翻译。 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp">
+
+        <!-- 只留图标, 而且图标本身随档位变大变小: 原来写「字号 1.3x」,
+             还得读一遍才知道现在是哪一档, 图标画大画小本身就是读数 -->
+        <ImageButton
+            android:id="@+id/btn_lyric_size"
+            android:layout_width="44dp"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/lyric_text_size"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_font_medium"
+            app:tint="@color/text_on_player_secondary" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+        <!-- 只留图标: 「翻译」两个字本身不提供信息, 图标已经说明了一切,
+             而这一行还要放字号设置, 文字会把两个开关挤得更远 -->
+        <TextView
+            android:id="@+id/btn_lyric_trans"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:contentDescription="@string/lyric_translation"
+            android:drawableStart="@drawable/ic_translate"
+            android:gravity="center_vertical|center"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            app:drawableTint="@color/text_on_player_secondary" />
+    </LinearLayout>
+</LinearLayout>

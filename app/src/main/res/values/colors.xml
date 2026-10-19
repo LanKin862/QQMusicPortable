@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 主色: QQ 音乐绿 -->
+    <color name="brand">#FF1FB954</color>
+    <color name="brand_dark">#FF15964A</color>
+    <color name="brand_light">#FFE8F8EF</color>
+
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+
+    <color name="bg_page">#FFF6F7F8</color>
+    <color name="bg_card">#FFFFFFFF</color>
+    <color name="bg_player">#FF202124</color>
+
+    <color name="text_primary">#FF1A1A1A</color>
+    <color name="text_secondary">#FF6B6F76</color>
+    <color name="text_hint">#FF9AA0A6</color>
+    <color name="text_on_player">#FFEDEDED</color>
+    <color name="text_on_player_secondary">#FF9AA0A6</color>
+
+    <color name="divider">#FFEBEDF0</color>
+    <color name="ripple">#1A000000</color>
+
+    <color name="mini_player_bg">#FFF0F1F3</color>
+</resources>

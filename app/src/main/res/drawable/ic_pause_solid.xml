@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    实心暂停 (列表行、迷你播放条、通知栏用): 与 ic_play_solid 同一套手感, 两根圆头竖条。
+
+    尺寸是按"视觉面积对齐"算出来的: 圆角三角约 32.7 x 45.2, 面积 ≈ 739;
+    这里两根 34 长、9 粗的圆头竖条, 面积 ≈ 2 x (34x9 + πx20) ≈ 738 —— 播放和暂停互相切换时
+    图标不会一跳一跳的。间距从 12 拉开到 14 是为了加粗之后中间那道缝别糊死。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M17,7V41M31,7V41"
+        android:strokeColor="@android:color/white"
+        android:strokeLineCap="round"
+        android:strokeWidth="9" />
+</vector>

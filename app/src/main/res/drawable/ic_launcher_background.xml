@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    自适应图标的背景层: 与启动图 SVG 里那块 rect 同一个渐变 (纯白 -> 极淡的绿)。
+
+    自适应图标的背景会被启动器按自己的形状裁切, 所以这里画满整幅矩形即可, 不用圆角。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <path android:pathData="M0,0h1024v1024h-1024z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="1024"
+                android:endY="1024"
+                android:startColor="#FFFFFFFF"
+                android:endColor="#FFE6F7EE" />
+        </aapt:attr>
+    </path>
+</vector>

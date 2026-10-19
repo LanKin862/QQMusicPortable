@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 音频输出通路徽章: 喇叭 + 两道声波。24 viewport, 锥形用填充、声波用描边 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4,9.5v5h3.2L12,18.6V5.4L7.2,9.5H4z" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M14.8,9.2a4.2,4.2 0,0 1,0 5.6"
+        android:strokeColor="@android:color/white"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.7" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M17.6,6.6a8.2,8.2 0,0 1,0 10.8"
+        android:strokeColor="@android:color/white"
+        android:strokeLineCap="round"
+        android:strokeWidth="1.7" />
+</vector>

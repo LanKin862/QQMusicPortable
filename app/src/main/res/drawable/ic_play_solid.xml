@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    实心播放三角 (列表行、迷你播放条用): 播放键去掉外面那圈圆环, 只留圆角三角。
+
+    路径直接取自 ic_play_ring 的三角部分, 120 的 viewport 原样保留, 靠 group 放大 2.5 倍
+    把图形铺到接近满幅 —— 缩放后 y 方向是 1.1 ~ 114.1, 正好落在 120 的范围内不裁边。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <group
+        android:pivotX="60"
+        android:pivotY="57.6"
+        android:scaleX="2.5"
+        android:scaleY="2.5">
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M48,41C48,37.2 52.3,35 55.4,37.2L77.2,52.5C80.7,55 80.7,60.2 77.2,62.7L55.4,78C52.3,80.2 48,78 48,74.2Z" />
+    </group>
+</vector>

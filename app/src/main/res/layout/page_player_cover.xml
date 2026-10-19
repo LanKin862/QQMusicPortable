@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放详情第 1 页: 歌曲封面 + 歌名 + 歌手/专辑 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp">
+
+        <!-- 封面 -->
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/cover"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_gravity="center"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:contentDescription="@string/tab_recommend"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_music_placeholder"
+                app:shapeAppearanceOverlay="@style/PlayerCoverShape" />
+
+            <ProgressBar
+                android:id="@+id/buffering"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/brand"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <!--
+          输出通路徽章: 夹在封面和歌名中间。
+          只报「设备 + 输出采样率 + 源是否同档」, 不谎报 bit-perfect —— 普通应用绕不过系统混音器。
+          拿不到信息时 [output_badge] 整行 GONE, 不留空档。
+        -->
+        <LinearLayout
+            android:id="@+id/output_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+                android:layout_width="13dp"
+                android:layout_height="13dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_output"
+                android:tint="@color/text_on_player_secondary" />
+
+            <TextView
+                android:id="@+id/output_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:textColor="@color/text_on_player_secondary"
+                android:textSize="11sp"
+                tools:text="扬声器 · 48 kHz · 直通" />
+        </LinearLayout>
+
+        <!-- 歌名行: 左侧是下载按钮 (紧贴封面左下方), 右侧留等宽占位让标题保持居中 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btn_download"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_download"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_download"
+                android:tint="@color/text_on_player_secondary" />
+
+            <TextView
+                android:id="@+id/title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:maxLines="2"
+                android:textColor="@color/text_on_player"
+                android:textSize="19sp"
+                android:textStyle="bold"
+                tools:text="歌曲名称" />
+
+            <ImageButton
+                android:id="@+id/btn_favorite"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_favorite"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_favorite_border"
+                android:tint="@color/text_on_player_secondary" />
+        </LinearLayout>
+
+        <!-- 歌手 · 专辑 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="6dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/quality_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="18dp"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/bg_tag_badge"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:textColor="@color/white"
+                android:textSize="10sp"
+                tools:text="SQ" />
+
+            <TextView
+                android:id="@+id/subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/text_on_player_secondary"
+                android:textSize="12sp"
+                tools:text="歌手 - 专辑" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

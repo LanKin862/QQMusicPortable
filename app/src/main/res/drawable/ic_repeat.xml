@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    列表循环: 左半弧 + 顶部箭头, 右半弧 + 底部箭头。
+
+    图形本身在 48 的 viewport 里只占 7~41, 直接放进 24dp 会比原来的 Material 图标小一圈,
+    所以用 group 放大 1.35 倍 —— 缩放后最外侧是 (41-24)*1.35+24 ≈ 41, 正好不超出 viewport。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48"
+    android:tint="?attr/colorControlNormal">
+    <group
+        android:pivotX="24"
+        android:pivotY="24"
+        android:scaleX="1.35"
+        android:scaleY="1.35">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M19,36H17C11.477,36 7,31.523 7,26V22C7,16.477 11.477,12 17,12H23"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M21,7.8C21,7 21.9,6.5 22.6,7L27.2,10.7C27.8,11.2 27.8,12.1 27.2,12.6L22.6,16.3C21.9,16.8 21,16.3 21,15.5Z" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M29,12H31C36.523,12 41,16.477 41,22V26C41,31.523 36.523,36 31,36H25"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M27,40.2C27,41 26.1,41.5 25.4,41L20.8,37.3C20.2,36.8 20.2,35.9 20.8,35.4L25.4,31.7C26.1,31.2 27,31.7 27,32.5Z" />
+    </group>
+</vector>

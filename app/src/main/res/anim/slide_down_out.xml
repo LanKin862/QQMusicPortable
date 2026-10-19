@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放详情收起: 整页向下滑出, 像是被塞回底部的迷你条 -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/accelerate_interpolator">
+    <translate
+        android:duration="260"
+        android:fromYDelta="0"
+        android:toYDelta="100%" />
+    <alpha
+        android:duration="220"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.85" />
+</set>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    磨砂玻璃质感的进度条滑块。
+
+    一块半透明白玻璃: 上缘亮、下缘暗, 外面一圈 0.8dp 的白色描边勾出玻璃厚度。
+    笔画都很细, 放在深色背景上会显出「毛玻璃」的边缘反光, 而不是一颗实心白球。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="oval">
+    <size
+        android:width="14dp"
+        android:height="14dp" />
+    <gradient
+        android:angle="90"
+        android:endColor="#E0FFFFFF"
+        android:startColor="#FFFFFF" />
+    <stroke
+        android:width="0.8dp"
+        android:color="#73FFFFFF" />
+</shape>

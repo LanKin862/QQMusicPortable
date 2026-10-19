@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 歌单 / 收藏 / 本地 详情页 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_page"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="@color/bg_page"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_back"
+            android:padding="12dp"
+            android:src="@drawable/ic_back"
+            app:tint="@color/text_primary" />
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            tools:text="歌单名称" />
+
+        <!-- 收藏 / 取消收藏这张歌单。本地/下载入口没有这个动作, 代码里会隐藏 -->
+        <ImageButton
+            android:id="@+id/btn_more"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_more"
+            android:padding="12dp"
+            android:src="@drawable/ic_more"
+            android:visibility="gone"
+            app:tint="@color/text_primary"
+            tools:visibility="visible" />
+    </LinearLayout>
+
+    <!-- 本地音乐入口顶部的两个选项栏: 本地 / 下载。其它来源页面隐藏 -->
+    <LinearLayout
+        android:id="@+id/local_tabs"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:background="@color/bg_card"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tab_local"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/local_tab_local"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tab_download"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/local_tab_download"
+            android:textSize="14sp" />
+
+        <!-- 手动重扫: MediaStore 是系统缓存, 从电脑拷进来的歌不会立刻出现,
+             需要主动让系统重新索引一遍。本地与下载两个 tab 都放这个按钮 -->
+        <ImageButton
+            android:id="@+id/btn_rescan"
+            android:layout_width="44dp"
+            android:layout_height="match_parent"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_rescan_local"
+            android:padding="10dp"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_refresh"
+            android:tint="@color/text_secondary" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/header_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_card"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="12dp">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/cover"
+            android:layout_width="96dp"
+            android:layout_height="96dp"
+            android:contentDescription="@string/section_created_playlist"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_music_placeholder"
+            app:shapeAppearanceOverlay="@style/CardCoverShape" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="14dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/subtitle"
+                style="@style/Text.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="2"
+                tools:text="创建者 · 32 首" />
+
+            <TextView
+                android:id="@+id/desc"
+                style="@style/Text.Secondary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:ellipsize="end"
+                android:maxLines="3"
+                tools:text="歌单简介" />
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btn_play_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:background="@drawable/bg_pill_brand"
+                    android:gravity="center"
+                    android:paddingStart="18dp"
+                    android:paddingEnd="18dp"
+                    android:text="@string/action_play_all"
+                    android:textColor="@color/white"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/btn_download_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginStart="10dp"
+                    android:background="@drawable/bg_pill_outline"
+                    android:gravity="center"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:text="@string/action_download"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 卡片右侧: 上搜索、下排序 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_marginStart="6dp"
+            android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/btn_search_song"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/search_in_playlist"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_search"
+                android:tint="@color/text_secondary" />
+
+            <ImageButton
+                android:id="@+id/btn_sort"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginTop="6dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_sort"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_sort"
+                android:tint="@color/text_secondary" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 列表与加载圈叠在一起: 加载圈浮在列表中央, 不占布局高度。
+         之前加载圈放在最后当普通子 View, 切换本地/下载时它一出现就把下面的
+         迷你播放条和下载导航栏整体顶上去, 看起来像在抖 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/song_recycler"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@color/bg_card"
+            android:clipToPadding="false"
+            android:paddingBottom="12dp"
+            android:scrollbars="none" />
+
+        <ProgressBar
+            android:id="@+id/loading"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center"
+            android:indeterminateTint="@color/brand"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- 迷你播放条: 位于下载导航栏之上; 导航栏隐藏时就贴在屏幕最底部 -->
+    <include layout="@layout/view_mini_player" />
+
+    <!-- 下载界面底部的两个导航栏: 已下载 / 正在下载。仅下载 tab 显示 -->
+    <LinearLayout
+        android:id="@+id/download_nav"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@color/bg_card"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/nav_downloaded"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/download_tab_done"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/nav_downloading"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="@string/download_tab_running"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+</LinearLayout>

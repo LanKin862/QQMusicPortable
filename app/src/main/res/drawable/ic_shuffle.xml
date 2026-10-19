@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 随机: 两条交叉的 S 曲线, 交叉处自然留白, 不用再做挖空。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48"
+    android:tint="?attr/colorControlNormal">
+    <group
+        android:pivotX="24"
+        android:pivotY="24"
+        android:scaleX="1.35"
+        android:scaleY="1.35">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,14H13C20,14 26,34 33,34H35"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,34H13C15.8,34 18.3,30.8 20.5,27"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M25.5,21C27.7,17.2 30.2,14 33,14H35"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M34,9.8C34,9 34.9,8.5 35.6,9L40.2,12.7C40.8,13.2 40.8,14.1 40.2,14.6L35.6,18.3C34.9,18.8 34,18.3 34,17.5Z" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M34,29.8C34,29 34.9,28.5 35.6,29L40.2,32.7C40.8,33.2 40.8,34.1 40.2,34.6L35.6,38.3C34.9,38.8 34,38.3 34,37.5Z" />
+    </group>
+</vector>

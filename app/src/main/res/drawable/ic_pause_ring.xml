@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    暂停键: 与播放键同一套 120 viewport 的空心圆环, 内部换成两根圆头竖条。
+
+    竖条用 stroke + strokeLineCap="round" 画, 两端是半圆, 和三角的圆角是同一套手感;
+    用 fill 画矩形的话两端是直角, 放在圆环里显得生硬。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp"
+    android:height="60dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M60,60m-56,0a56,56 0,1 1,112 0a56,56 0,1 1,-112 0"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="3" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M50,45V75M70,45V75"
+        android:strokeColor="@android:color/white"
+        android:strokeLineCap="round"
+        android:strokeWidth="9" />
+</vector>

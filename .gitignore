@@ -1,0 +1,54 @@
+# ============================================================
+# 轻音 (QQMusicPortable) — 忽略规则
+# 原则：只提交源码、资源、Gradle 构建脚本与文档；
+#      本机配置、构建产物、调试抓包与截图一律不入库。
+# ============================================================
+
+# ---------- Gradle / IDE ----------
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+local.properties
+*.hprof
+
+# ---------- 构建产物与签名 ----------
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.jks
+*.keystore
+!debug.keystore
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 日志与诊断 ----------
+*.log
+build-log.txt
+_logcat-raw.txt
+_diag_boot.log
+
+# ---------- 本地调试产物（勿入库） ----------
+# 抓包 / 页面 dump / 截图 / 参考源码 / 一次性探测脚本
+/_tools/
+/_shots/
+/_scripts/
+/tools/
+/ref/
+/_screen*.png
+/_framestats.txt
+/app-log.txt
+/fx.xml
+/i.xml
+/rec.xml
+
+# ---------- 本地文档（不随仓库发布） ----------
+/docs/DEVLOG.md

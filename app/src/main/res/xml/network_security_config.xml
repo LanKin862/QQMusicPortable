@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  必须允许明文 HTTP。
+
+  QQ 音乐的接口 (u.y.qq.com / c.y.qq.com) 走 HTTPS, 但:
+    - 用户头像:  http://thirdqq.qlogo.cn/g?...
+    - 图片 CDN:  http://y.gtimg.cn/...  (服务端返回的 coverUrl 常是 http)
+    - 部分播放直链: http://dl.stream.qqmusic.qq.com/...
+  这些仍然是明文 http。若禁止明文, 表现就是「头像/封面不显示」「在线歌曲无法播放」,
+  而接口本身却是正常的 —— 极难排查。因此这里放开明文, 接口仍走 HTTPS。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

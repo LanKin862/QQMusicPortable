@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 下一曲: 与上一曲镜像。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48"
+    android:tint="?attr/colorControlNormal">
+    <group
+        android:pivotX="24"
+        android:pivotY="24"
+        android:scaleX="1.35"
+        android:scaleY="1.35">
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M13,13.5C13,11.2 15.5,9.8 17.4,11.1L30.2,20.1C32.4,21.6 32.4,24.9 30.2,26.4L17.4,35.4C15.5,36.7 13,35.3 13,33Z" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M36,11V37"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+    </group>
+</vector>

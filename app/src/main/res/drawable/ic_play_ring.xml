@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    播放键: 空心圆环 + 内部一枚圆角三角。
+
+    120 的 viewport 是为了让圆环描边 (3) 与三角的圆角在放大到 52dp 之后仍然细腻;
+    如果按 24 的 viewport 画, 圆角半径只剩 0.6, 看上去还是直角三角。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="60dp"
+    android:height="60dp"
+    android:viewportWidth="120"
+    android:viewportHeight="120">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M60,60m-56,0a56,56 0,1 1,112 0a56,56 0,1 1,-112 0"
+        android:strokeColor="@android:color/white"
+        android:strokeWidth="3" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M48,41C48,37.2 52.3,35 55.4,37.2L77.2,52.5C80.7,55 80.7,60.2 77.2,62.7L55.4,78C52.3,80.2 48,78 48,74.2Z" />
+</vector>

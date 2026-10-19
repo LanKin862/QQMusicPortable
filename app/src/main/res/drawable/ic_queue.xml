@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放列表: 三条横线 (第三条短一截) + 右下角一个小箭头, 暗示「往下翻」。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48"
+    android:tint="?attr/colorControlNormal">
+    <group
+        android:pivotX="24"
+        android:pivotY="24"
+        android:scaleX="1.35"
+        android:scaleY="1.35">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,13H38"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,24H38"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M8,35H26"
+            android:strokeColor="@android:color/white"
+            android:strokeLineCap="round"
+            android:strokeWidth="2.5" />
+        <path
+            android:fillColor="@android:color/white"
+            android:pathData="M32,30.5C32,29.3 33.3,28.6 34.3,29.3L40.2,33.4C41.3,34.2 41.3,35.8 40.2,36.6L34.3,40.7C33.3,41.4 32,40.7 32,39.5Z" />
+    </group>
+</vector>

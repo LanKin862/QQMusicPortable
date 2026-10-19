@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- ================= 账号 ================= -->
+    <PreferenceCategory
+        app:title="@string/settings_account">
+
+        <Preference
+            android:key="account_login"
+            android:persistent="false"
+            android:title="@string/settings_account_login" />
+
+        <Preference
+            android:key="account_import_cookie"
+            android:persistent="false"
+            android:summary="@string/settings_import_cookie_desc"
+            android:title="@string/settings_import_cookie" />
+
+        <Preference
+            android:key="account_logout"
+            android:persistent="false"
+            android:title="@string/settings_logout" />
+    </PreferenceCategory>
+
+    <!-- ================= 播放与下载 ================= -->
+    <PreferenceCategory
+        app:title="@string/settings_play_download">
+
+        <PreferenceCategory app:title="@string/settings_quality">
+
+            <ListPreference
+                android:key="quality_online"
+                android:persistent="false"
+                android:title="@string/quality_online" />
+
+            <ListPreference
+                android:key="quality_download"
+                android:persistent="false"
+                android:title="@string/quality_download" />
+        </PreferenceCategory>
+
+        <PreferenceCategory app:title="@string/settings_play">
+
+            <ListPreference
+                android:key="play_fade"
+                android:persistent="false"
+                android:title="@string/play_fade" />
+
+            <SwitchPreferenceCompat
+                android:key="volume_balance"
+                android:persistent="false"
+                android:summary="@string/volume_balance_desc"
+                android:title="@string/volume_balance" />
+
+            <SwitchPreferenceCompat
+                android:key="loudness_adapt"
+                android:persistent="false"
+                android:summary="@string/loudness_adapt_desc"
+                android:title="@string/loudness_adapt" />
+        </PreferenceCategory>
+    </PreferenceCategory>
+
+    <!-- ================= 存储 ================= -->
+    <PreferenceCategory app:title="@string/cache_limit">
+
+        <ListPreference
+            android:key="cache_limit"
+            android:persistent="false"
+            android:title="@string/cache_limit" />
+
+        <ListPreference
+            android:key="cache_image_mb"
+            android:persistent="false"
+            android:title="@string/cache_image"
+            android:summary="@string/cache_tier_hint" />
+
+        <ListPreference
+            android:key="cache_meta_mb"
+            android:persistent="false"
+            android:title="@string/cache_meta"
+            android:summary="@string/cache_tier_hint" />
+
+        <ListPreference
+            android:key="cache_lyric_mb"
+            android:persistent="false"
+            android:title="@string/cache_lyric"
+            android:summary="@string/cache_tier_hint" />
+
+        <Preference
+            android:key="cache_clear"
+            android:persistent="false"
+            android:title="@string/cache_clear" />
+
+        <!-- 本地歌曲没有 QQ 音乐的 mid, 封面和歌词都得按名字借。这里一次性把全部本地歌都匹配一遍 -->
+        <Preference
+            android:key="local_meta_match"
+            android:persistent="false"
+            android:title="@string/local_meta_match"
+            android:summary="@string/local_meta_match_hint" />
+
+        <ListPreference
+            android:key="download_location"
+            android:persistent="false"
+            android:title="@string/download_location" />
+    </PreferenceCategory>
+
+    <!-- ================= 关于 ================= -->
+    <PreferenceCategory app:title="@string/settings_about">
+
+        <Preference
+            android:key="version"
+            android:persistent="false"
+            android:title="@string/settings_version" />
+    </PreferenceCategory>
+</PreferenceScreen>
