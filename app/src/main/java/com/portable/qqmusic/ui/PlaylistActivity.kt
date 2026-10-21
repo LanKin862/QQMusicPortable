@@ -21,6 +21,7 @@ import com.portable.qqmusic.core.Settings
 import com.portable.qqmusic.core.Store
 import com.portable.qqmusic.core.Task
 import com.portable.qqmusic.data.DownloadManager
+import com.portable.qqmusic.data.LocalMeta
 import com.portable.qqmusic.data.LocalMusic
 import com.portable.qqmusic.data.api.Login
 import com.portable.qqmusic.data.api.Playlist
@@ -32,6 +33,7 @@ import com.portable.qqmusic.player.PlayerController
 import com.portable.qqmusic.ui.adapter.SongAdapter
 import com.portable.qqmusic.ui.util.Extras
 import com.portable.qqmusic.ui.util.ImageLoader
+import com.portable.qqmusic.ui.util.Menus
 import com.portable.qqmusic.ui.util.SongActions
 import com.portable.qqmusic.ui.util.Tip
 import java.text.Collator
@@ -59,7 +61,7 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
     private lateinit var downloadNav: View
     private lateinit var navDownloaded: TextView
     private lateinit var navDownloading: TextView
-    private lateinit var downloadAllButton: View
+    private lateinit var downloadAllButton: TextView
     private lateinit var headerCard: View
     private lateinit var moreButton: ImageButton
 
@@ -219,6 +221,19 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
     /** 歌单页没有底部导航栏, 迷你播放条直接贴在屏幕最底部 */
     private var miniPlayer: MiniPlayerController? = null
 
+    // ---------------- 批量多选 ----------------
+
+    /** 是否处于批量多选 (只有系统返回键能退出) */
+    private var selecting = false
+    private val selectedKeys = LinkedHashSet<String>()
+    private lateinit var batchBar: View
+    private lateinit var batchPlay: TextView
+    private lateinit var batchAddPlaylist: TextView
+    private lateinit var batchDownload: TextView
+    private lateinit var batchDelete: TextView
+    private lateinit var batchSelectAll: TextView
+    private lateinit var multiIcon: ImageButton
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_playlist)
@@ -237,6 +252,13 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         navDownloading = findViewById(R.id.nav_downloading)
         downloadAllButton = findViewById(R.id.btn_download_all)
         headerCard = findViewById(R.id.header_card)
+        batchBar = findViewById(R.id.batch_bar)
+        batchPlay = findViewById(R.id.batch_play)
+        batchAddPlaylist = findViewById(R.id.batch_add_playlist)
+        batchDownload = findViewById(R.id.batch_download)
+        batchDelete = findViewById(R.id.batch_delete)
+        batchSelectAll = findViewById(R.id.batch_select_all)
+        multiIcon = findViewById(R.id.btn_multi)
 
         disstid = intent.getLongExtra(Extras.EXTRA_DISSTID, 0L)
         dirid = intent.getLongExtra(Extras.EXTRA_DIRID, 0L)
@@ -252,7 +274,14 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
             if (songs.isEmpty()) return@setOnClickListener
             playFrom(0)
         }
-        downloadAllButton.setOnClickListener { downloadAll() }
+        // 这个按钮现在是批量多选入口 (歌单/专辑原来放的是「下载」)
+        downloadAllButton.setOnClickListener { enterSelectMode() }
+        multiIcon.setOnClickListener { enterSelectMode() }
+        batchPlay.setOnClickListener { playSelected() }
+        batchAddPlaylist.setOnClickListener { addSelectedToPlaylist() }
+        batchDownload.setOnClickListener { batchDownloadSelected() }
+        batchDelete.setOnClickListener { batchDeleteSelected() }
+        batchSelectAll.setOnClickListener { toggleSelectAll() }
         findViewById<ImageButton>(R.id.btn_search_song).setOnClickListener { showPlaylistSearch() }
         findViewById<ImageButton>(R.id.btn_sort).setOnClickListener { showSortPicker() }
         moreButton = findViewById(R.id.btn_more)
@@ -261,6 +290,7 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         collectedPlaylist = source == Extras.SOURCE_COLLECTED
 
         setupLocalTabs()
+        refreshDlAndMultiVisibility()
         setupRecycler()
         PlayerController.addListener(this)
         DownloadManager.addListener(downloadListener)
@@ -279,6 +309,46 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         miniPlayer = null
         super.onDestroy()
     }
+
+    /**
+     * 上一次看到「我喜欢」的版本号。
+     *
+     * 在播放页取消收藏, 或从别处改了收藏状态之后, 这个 Activity 往往还在返回栈里
+     * (没被销毁), 不重新拉就一直是旧列表 —— 用户反馈的「取消收藏后要重进才消失」。
+     */
+    private var favoriteRevSeen = UserApi.favoriteRevision
+
+    /**
+     * 上次见到本地匹配结果的版本号。
+     *
+     * 设置里跑完「匹配本地歌曲信息」回到本地列表时，这个 Activity 通常还在返回栈里，
+     * 不重读就还是「未知歌手」—— 用户会以为批量匹配没生效。
+     */
+    private var localMetaRevSeen = LocalMeta.revision
+
+    override fun onResume() {
+        super.onResume()
+        if (isLocalList()) {
+            if (LocalMeta.revision != localMetaRevSeen) {
+                localMetaRevSeen = LocalMeta.revision
+                load()
+            }
+            return
+        }
+        if (!isFavoriteList()) return
+        if (UserApi.favoriteRevision == favoriteRevSeen) return
+        favoriteRevSeen = UserApi.favoriteRevision
+        load()
+    }
+
+    /** 当前页是不是本地/下载（都会读 LocalMeta 借来的歌手和封面）。 */
+    private fun isLocalList(): Boolean =
+        source == Extras.SOURCE_LOCAL || source == Extras.SOURCE_DOWNLOADED
+
+    /** 当前页是不是「我喜欢」: 从我的页进 (SOURCE_FAVORITE) 或从自建歌单里点进来。 */
+    private fun isFavoriteList(): Boolean =
+        source == Extras.SOURCE_FAVORITE ||
+            (source == Extras.SOURCE_PLAYLIST && dirid == UserApi.FAVORITE_DIRID)
 
     /**
      * 「正在下载」页的刷新节拍。
@@ -369,9 +439,9 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         val idle = ContextCompat.getColor(this, R.color.text_secondary)
         tabLocal.setTextColor(if (onLocal) brand else idle)
         tabDownload.setTextColor(if (onLocal) idle else brand)
-        // 本地界面没有下载这一项: 顶部那个「下载」按钮整个去掉
-        downloadAllButton.visibility = if (onLocal) View.GONE else View.VISIBLE
-        // 下载界面只要列表与状态: 封面/简介/播放全部/下载 整块头部都收起来
+        // 本地 tab 也保留这个按钮 — 它是批量多选入口, 不再代表「下载全部」
+        refreshDlAndMultiVisibility()
+        // 下载界面只要列表与状态: 封面/简介/播放全部 整块头部都收起来
         headerCard.visibility = if (onLocal) View.VISIBLE else View.GONE
         downloadNav.visibility = if (onLocal) View.GONE else View.VISIBLE
         navDownloaded.setTextColor(if (downloadTab == 0) brand else idle)
@@ -386,7 +456,8 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
             // 「正在下载」页: 副标题显示状态、右侧百分比、行底部进度条
             stateOf = { song -> if (showingDownloading()) downloadStates[song.key()] else null },
             // 「正在下载」是纯状态页, 行尾的「更多」菜单没意义 (下载中没有可执行的队列操作)
-            showMoreOf = { !showingDownloading() }
+            showMoreOf = { !showingDownloading() },
+            onToggleSelect = { song -> toggleSelect(song) }
         )
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
@@ -403,10 +474,248 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         })
     }
 
+    // ---------------- 批量多选 ----------------
+
+    private fun enterSelectMode() {
+        if (selecting) return
+        selecting = true
+        selectedKeys.clear()
+        batchBar.visibility = View.VISIBLE
+        downloadAllButton.visibility = View.GONE
+        multiIcon.visibility = View.GONE
+        adapter.setSelection(true, emptySet())
+        batchSelectAll.setText(R.string.action_select_all)
+        // 本地歌已经在磁盘上, 只提供删除; 歌单/专辑/歌手才有下载
+        batchDownload.visibility = if (source == Extras.SOURCE_LOCAL) View.GONE else View.VISIBLE
+        batchDelete.visibility = View.VISIBLE
+    }
+
+    private fun exitSelectMode() {
+        if (!selecting) return
+        selecting = false
+        selectedKeys.clear()
+        batchBar.visibility = View.GONE
+        adapter.setSelection(false, emptySet())
+        refreshDlAndMultiVisibility()
+    }
+
+    /**
+     * 信息栏上「多选」入口的显隐。
+     *
+     * 歌手页按用户要求做成小图标 (和「N 首」那行并排), 其它来源用一颗胶囊按钮,
+     * 位置就是原来「下载」那个。多选进行中两个入口都收起来。
+     */
+    private fun refreshDlAndMultiVisibility() {
+        if (selecting) {
+            downloadAllButton.visibility = View.GONE
+            multiIcon.visibility = View.GONE
+            return
+        }
+        val downloadTabShown = source == Extras.SOURCE_LOCAL && localTab == 1
+        val singer = source == Extras.SOURCE_SINGER
+        multiIcon.visibility = if (singer) View.VISIBLE else View.GONE
+        if (!singer && !downloadTabShown) {
+            downloadAllButton.setText(R.string.action_multi_select)
+            downloadAllButton.visibility = View.VISIBLE
+        } else {
+            downloadAllButton.visibility = View.GONE
+        }
+    }
+
+    private fun toggleSelect(song: Song) {
+        if (!selecting) return
+        val key = song.key()
+        if (!selectedKeys.add(key)) selectedKeys.remove(key)
+        adapter.setChecked(selectedKeys.toSet())
+        updateSelectAllLabel()
+    }
+
+    private fun updateSelectAllLabel() {
+        val allSelected = songs.isNotEmpty() && selectedKeys.size == songs.size
+        batchSelectAll.setText(
+            if (allSelected) R.string.action_select_none else R.string.action_select_all
+        )
+    }
+
+    private fun toggleSelectAll() {
+        if (!selecting) return
+        if (selectedKeys.size == songs.size) {
+            selectedKeys.clear()
+        } else {
+            selectedKeys.clear()
+            songs.forEach { selectedKeys.add(it.key()) }
+        }
+        adapter.setChecked(selectedKeys.toSet())
+        updateSelectAllLabel()
+    }
+
+    private fun selectedSongs(): List<Song> = songs.filter { selectedKeys.contains(it.key()) }
+
+    /** 以选中歌曲为播放列表, 从第一首开始播 */
+    private fun playSelected() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        PlayerController.setQueue(this, picked, 0, autoPlay = true)
+        exitSelectMode()
+    }
+
+    private fun addSelectedToPlaylist() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        com.portable.qqmusic.ui.util.SongActions.addToPlaylist(this, picked)
+    }
+
+    private fun batchDownloadSelected() {
+        val picked = selectedSongs().filter { !it.isLocal }
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        DownloadManager.enqueue(this, picked)
+        Tip.toast(this, getString(R.string.batch_download_added, picked.size))
+    }
+
+    private fun batchDeleteSelected() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        when {
+            source == Extras.SOURCE_LOCAL || source == Extras.SOURCE_DOWNLOADED ->
+                confirmBatchDeleteFiles(picked)
+            isFavoriteList() -> confirmBatchUnfavorite(picked)
+            source == Extras.SOURCE_PLAYLIST && dirid > 0L ->
+                confirmBatchRemoveFromPlaylist(picked)
+            else -> Tip.toast(this, getString(R.string.batch_delete_unsupported))
+        }
+    }
+
+    private fun confirmBatchDeleteFiles(picked: List<Song>) {
+        Menus.confirm(
+            this,
+            getString(R.string.batch_delete_title, picked.size),
+            getString(R.string.delete_file_message),
+            getString(R.string.action_delete),
+            getString(R.string.action_cancel)
+        ) { deleteFiles(picked) }
+    }
+
+    private fun deleteFiles(picked: List<Song>) {
+        val ctx = applicationContext
+        Task.io {
+            var done = 0
+            var needConfirm = 0
+            var failed = 0
+            for (song in picked) {
+                when (LocalMusic.delete(ctx, song)) {
+                    is LocalMusic.DeleteResult.Done -> {
+                        done++
+                        DownloadManager.forget(song)
+                        PlayerController.removeByKey(song.key())
+                    }
+                    is LocalMusic.DeleteResult.NeedConfirm -> needConfirm++
+                    LocalMusic.DeleteResult.Failed -> failed++
+                }
+            }
+            val list = localSongs()
+            Task.main {
+                if (isFinishing || isDestroyed) return@main
+                setSongs(list)
+                bindHeader(headerPlaylist, list)
+                val msg = if (needConfirm > 0) {
+                    getString(R.string.batch_delete_result_confirm, done, needConfirm)
+                } else if (failed > 0) {
+                    getString(R.string.batch_delete_result_fail, done, failed)
+                } else {
+                    getString(R.string.batch_delete_result, done)
+                }
+                Tip.toast(this, msg)
+                exitSelectMode()
+            }
+        }
+    }
+
+    private fun confirmBatchUnfavorite(picked: List<Song>) {
+        Menus.confirm(
+            this,
+            getString(R.string.batch_unfavorite_title, picked.size),
+            null,
+            getString(R.string.action_unfavorite),
+            getString(R.string.action_cancel)
+        ) { unfavoriteAll(picked) }
+    }
+
+    private fun unfavoriteAll(picked: List<Song>) {
+        Task.io {
+            var ok = 0
+            for (song in picked) {
+                if (runCatching { UserApi.setFavorite(song, false).ok }.getOrDefault(false)) ok++
+            }
+            val list = PlaylistApi.playlistDetail(0L, PAGE_SIZE, UserApi.FAVORITE_DIRID).second
+            favoriteRevSeen = UserApi.favoriteRevision
+            Task.main {
+                if (isFinishing || isDestroyed) return@main
+                setSongs(list)
+                bindHeader(headerPlaylist, list)
+                Tip.toast(this, getString(R.string.batch_unfavorite_result, ok))
+                exitSelectMode()
+            }
+        }
+    }
+
+    private fun confirmBatchRemoveFromPlaylist(picked: List<Song>) {
+        Menus.confirm(
+            this,
+            getString(R.string.batch_remove_title, picked.size),
+            null,
+            getString(R.string.action_remove_from_playlist),
+            getString(R.string.action_cancel)
+        ) { removeFromPlaylistBatch(picked) }
+    }
+
+    private fun removeFromPlaylistBatch(picked: List<Song>) {
+        Task.io {
+            var ok = 0
+            for (song in picked) {
+                if (runCatching { UserApi.removeSongFromPlaylist(dirid, song) }.getOrDefault(false)) ok++
+            }
+            val removed = picked.mapTo(HashSet()) { it.key() }
+            val rest = baseSongs.filterNot { removed.contains(it.key()) }
+            Task.main {
+                if (isFinishing || isDestroyed) return@main
+                setSongs(rest)
+                bindHeader(headerPlaylist, rest)
+                favoriteRevSeen = UserApi.favoriteRevision
+                Store.putInt(Store.K.LIBRARY_REV, Store.int(Store.K.LIBRARY_REV, 0) + 1)
+                Tip.toast(this, getString(R.string.batch_remove_result, ok))
+                exitSelectMode()
+            }
+        }
+    }
+
+    override fun onBackPressed() {
+        if (selecting) {
+            exitSelectMode()
+            return
+        }
+        super.onBackPressed()
+    }
+
     // ---------------- 数据 ----------------
 
     private fun load() {
+        if (selecting) exitSelectMode()
         loading.visibility = View.VISIBLE
+        // 重新载入 = 从第一页再来, 预取配额也要归零, 否则第二次加载后
+        // autoPages 已经用满, 副标题永远停在「499 首」。
+        autoPages = 0
         Task.io {
             val (playlist, list) = when (source) {
                 // 「我喜欢」= 用户目录 dirid=201, 用 CgiGetDiss{disstid:0, dirid:201}
@@ -593,7 +902,7 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
      * 页面于是永远是空的。现在改成看整份任务表, 每首都有进度与状态。
      */
     private fun localSongs(): List<Song> = when {
-        localTab == 0 -> LocalMusic.query(this, PAGE_SIZE)
+        localTab == 0 -> LocalMusic.query(this)
         downloadTab == 0 -> DownloadManager.downloadedFiles(this).mapIndexed { i, f ->
             LocalMusic.fileToSong(f, i)
         }
@@ -626,23 +935,33 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
             // 接口没给封面就用列表页带过来的 —— CgiGetDiss 的 data 里没有封面字段,
             // 自建歌单因此一直显示成通用音符图标, 而列表页明明是有的。
             val cover = playlist.coverUrl().ifEmpty { Playlist.coverUrlOf(coverFromIntent) }
-            ImageLoader.load(this, cover, coverView)
             // 专辑页的 Playlist 没有 creator, 不特判就会显示成应用名「轻音」
-            val creator = if (source == Extras.SOURCE_ALBUM) {
-                getString(R.string.album_label)
-            } else if (playlist.creator.isNotEmpty()) {
-                playlist.creator
+            val isFavList = source == Extras.SOURCE_FAVORITE || dirid == UserApi.FAVORITE_DIRID
+            // 「我喜欢」是虚拟歌单, 没有封面: 统一用米白底红心, 与「我的」列表里那张一致
+            if (isFavList) {
+                coverView.setImageResource(R.drawable.bg_favorite_cover)
             } else {
-                getString(R.string.app_name)
+                ImageLoader.load(this, cover, coverView)
             }
-            subtitleView.text = "$creator · " + getString(R.string.song_count_format, list.size)
+            val creator = when {
+                source == Extras.SOURCE_ALBUM -> getString(R.string.album_label)
+                playlist.creator.isNotEmpty() -> playlist.creator
+                // 「我喜欢」的详情接口不给 creator, 硬补一个应用名很奇怪, 只显示曲目数
+                isFavList -> ""
+                else -> getString(R.string.app_name)
+            }
+            subtitleView.text = if (creator.isEmpty()) {
+                getString(R.string.song_count_format, list.size)
+            } else {
+                "$creator · " + getString(R.string.song_count_format, list.size)
+            }
             descView.text = playlist.desc
             descView.visibility = if (playlist.desc.isEmpty()) View.GONE else View.VISIBLE
         } else {
             subtitleView.text = songCountText()
             descView.visibility = View.GONE
             when (source) {
-                Extras.SOURCE_FAVORITE -> coverView.setImageResource(R.drawable.ic_favorite)
+                Extras.SOURCE_FAVORITE -> coverView.setImageResource(R.drawable.bg_favorite_cover)
                 // 歌手页: 头像从搜索结果带过来 —— 歌手歌曲接口本身不回头像
                 Extras.SOURCE_SINGER -> ImageLoader.load(this, coverFromIntent, coverView)
                 // 专辑页同理: albumDetail 回的 Playlist 不带封面, 用 intent 里拼好的那张
@@ -686,27 +1005,16 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
 
     /** 歌单内搜索: 边输入边过滤; 「确定」保留结果, 「取消」恢复原列表 */
     private fun showPlaylistSearch() {
-        val pad = (20 * resources.displayMetrics.density).toInt()
-        val input = EditText(this).apply {
-            hint = getString(R.string.search_in_playlist_hint)
-            setSingleLine()
-            setText(filterQuery)
-            setSelection(text.length)
-            setPadding(pad, pad, pad, pad)
-        }
-        val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.search_in_playlist)
-            .setView(input)
-            .setPositiveButton(R.string.action_confirm) { _, _ -> }
-            .setNeutralButton(R.string.action_clear) { _, _ -> input.setText("") }
-            .setNegativeButton(R.string.action_cancel) { _, _ -> updateFilter("") }
-            .create()
-        input.doAfterTextChanged { editable -> updateFilter(editable?.toString().orEmpty()) }
-        dialog.setOnShowListener {
-            input.requestFocus()
-            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE)
-        }
-        dialog.show()
+        Menus.showInput(
+            context = this,
+            title = getString(R.string.search_in_playlist),
+            hint = getString(R.string.search_in_playlist_hint),
+            initial = filterQuery,
+            onTextChanged = { q -> updateFilter(q) },
+            onClear = { updateFilter("") },
+            onCancel = { updateFilter("") },
+            onConfirm = { _ -> }
+        )
     }
 
     private fun updateFilter(q: String) {
@@ -733,24 +1041,19 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         else -> "playlist_$disstid"
     }
 
-    /** 排序方式: 默认 / 倒序 / A→Z / Z→A */
+    /** 排序方式: 默认 / 倒序 / A→Z / Z→A, 当前项画勾 */
     private fun showSortPicker() {
-        val labels = arrayOf(
+        val labels = listOf(
             getString(R.string.sort_default),
             getString(R.string.sort_reverse),
             getString(R.string.sort_az),
             getString(R.string.sort_za)
         )
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.action_sort)
-            .setSingleChoiceItems(labels, sortMode) { d, which ->
-                sortMode = which
-                Settings.setPlaylistSort(sortScope(), which)
-                applyView()
-                d.dismiss()
-            }
-            .setNegativeButton(R.string.action_cancel, null)
-            .show()
+        Menus.show(this, getString(R.string.action_sort), labels, checkedIndex = sortMode) { which ->
+            sortMode = which
+            Settings.setPlaylistSort(sortScope(), which)
+            applyView()
+        }
     }
 
     // ---------------- 交互 ----------------
@@ -810,25 +1113,21 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
         } else {
             actions.add(getString(R.string.favorite_playlist) to { confirmPlaylistFav(true) })
         }
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(titleView.text)
-            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
-            .show()
+        Menus.show(this, titleView.text.toString(), actions.map { it.first }) { which ->
+            actions[which].second()
+        }
     }
 
     private fun confirmPlaylistFav(favorite: Boolean) {
         val name = titleView.text?.toString().orEmpty()
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(name)
-            .setMessage(
-                if (favorite) getString(R.string.favorite_playlist_message)
-                else getString(R.string.unfavorite_playlist_message, name)
-            )
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(
-                if (favorite) R.string.favorite_playlist else R.string.unfavorite_playlist
-            ) { _, _ -> setPlaylistFav(favorite) }
-            .show()
+        Menus.confirm(
+            this,
+            name,
+            if (favorite) getString(R.string.favorite_playlist_message)
+            else getString(R.string.unfavorite_playlist_message, name),
+            getString(if (favorite) R.string.favorite_playlist else R.string.unfavorite_playlist),
+            getString(R.string.action_cancel)
+        ) { setPlaylistFav(favorite) }
     }
 
     private fun setPlaylistFav(favorite: Boolean) {
@@ -872,7 +1171,8 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
             return
         }
         Task.io {
-            val fav = runCatching { UserApi.favoriteMids().contains(song.mid) }.getOrDefault(false)
+            // 缓存里有就本地判, 没有就单查这一首 —— 不再为了弹菜单去翻三页。
+            val fav = runCatching { UserApi.favoriteState(song.mid) }.getOrDefault(false)
             Task.main {
                 if (isFinishing || isDestroyed) return@main
                 popSongMenu(song, isFileEntry, fav)
@@ -919,22 +1219,18 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
                 confirmRemoveFromPlaylist(song)
             })
         }
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(song.name)
-            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
-            .show()
+        Menus.show(this, song.name, actions.map { it.first }) { which -> actions[which].second() }
     }
 
     /** 把这首歌从当前自建歌单里移除。只解除关系, 不动文件。 */
     private fun confirmRemoveFromPlaylist(song: Song) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(song.name)
-            .setMessage(getString(R.string.remove_from_playlist_message, song.name))
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.action_remove_from_playlist) { _, _ ->
-                removeFromPlaylist(song)
-            }
-            .show()
+        Menus.confirm(
+            this,
+            song.name,
+            getString(R.string.remove_from_playlist_message, song.name),
+            getString(R.string.action_remove_from_playlist),
+            getString(R.string.action_cancel)
+        ) { removeFromPlaylist(song) }
     }
 
     private fun removeFromPlaylist(song: Song) {
@@ -949,6 +1245,8 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
                 val rest = baseSongs.filterNot { it.key() == song.key() }
                 setSongs(rest)
                 bindHeader(headerPlaylist, rest)
+                // 自己刚改的收藏状态, 记下版本号, 免得回到前台再白拉一遍。
+                favoriteRevSeen = UserApi.favoriteRevision
                 // 让「我的」页的歌单条数/歌曲数也跟着变; 下次进来不会再看到这首。
                 Store.putInt(Store.K.LIBRARY_REV, Store.int(Store.K.LIBRARY_REV, 0) + 1)
                 Tip.toast(this, getString(R.string.playlist_song_removed))
@@ -958,12 +1256,13 @@ class PlaylistActivity : AppCompatActivity(), PlayerController.Listener {
 
     /** 删除本地/已下载歌曲的文件。不可逆, 所以先确认再动手。 */
     private fun confirmDeleteFile(song: Song) {
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(getString(R.string.delete_file_title, song.name))
-            .setMessage(R.string.delete_file_message)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.action_delete) { _, _ -> deleteFile(song) }
-            .show()
+        Menus.confirm(
+            this,
+            getString(R.string.delete_file_title, song.name),
+            getString(R.string.delete_file_message),
+            getString(R.string.action_delete),
+            getString(R.string.action_cancel)
+        ) { deleteFile(song) }
     }
 
     private fun deleteFile(song: Song) {

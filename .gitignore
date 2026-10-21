@@ -52,3 +52,8 @@ _diag_boot.log
 
 # ---------- 本地文档（不随仓库发布） ----------
 /docs/DEVLOG.md
+/docs/mismatch-*.md
+
+# ---------- 一次性调试数据 ----------
+/_miss.tsv
+/_ui.xml

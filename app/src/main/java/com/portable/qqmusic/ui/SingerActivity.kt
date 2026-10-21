@@ -2,13 +2,13 @@ package com.portable.qqmusic.ui
 
 import android.content.Intent
 import android.content.res.ColorStateList
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -20,12 +20,12 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.palette.graphics.Palette
 import com.portable.qqmusic.core.Contrast
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.appbar.AppBarLayout
 import com.portable.qqmusic.R
+import com.portable.qqmusic.data.DownloadManager
 import com.portable.qqmusic.data.api.SingerApi
 import com.portable.qqmusic.data.api.Song
 import com.portable.qqmusic.core.Diag
@@ -34,6 +34,8 @@ import com.portable.qqmusic.player.PlayerController
 import com.portable.qqmusic.ui.adapter.SongAdapter
 import com.portable.qqmusic.ui.util.Extras
 import com.portable.qqmusic.ui.util.ImageLoader
+import com.portable.qqmusic.ui.util.Menus
+import com.portable.qqmusic.ui.util.Tip
 
 /**
  * 歌手详情页。
@@ -86,6 +88,21 @@ class SingerActivity : AppCompatActivity() {
 
     private var miniPlayer: MiniPlayerController? = null
 
+    // ---------------- 批量多选 ----------------
+
+    private lateinit var multiButton: ImageButton
+    private lateinit var batchBar: View
+    private lateinit var batchPlay: TextView
+    private lateinit var batchAddPlaylist: TextView
+    private lateinit var batchDownload: TextView
+    private lateinit var batchSelectAll: TextView
+
+    /** 光晕与背景的相对亮度差下限 (WCAG 思路, 低于这个值光晕会被背景吃掉) */
+    private val GLOW_MIN_CONTRAST = 0.34f
+    private var selecting = false
+    private var lastGlow = 0
+    private val selectedKeys = LinkedHashSet<String>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         singerMid = intent.getStringExtra(Extras.EXTRA_SINGER_MID) ?: ""
@@ -117,6 +134,17 @@ class SingerActivity : AppCompatActivity() {
         tabSongs = findViewById(R.id.tab_songs)
         tabAlbums = findViewById(R.id.tab_albums)
         countView = findViewById(R.id.singer_count)
+        multiButton = findViewById(R.id.btn_multi)
+        batchBar = findViewById(R.id.batch_bar)
+        batchPlay = findViewById(R.id.batch_play)
+        batchAddPlaylist = findViewById(R.id.batch_add_playlist)
+        batchDownload = findViewById(R.id.batch_download)
+        batchSelectAll = findViewById(R.id.batch_select_all)
+        multiButton.setOnClickListener { enterSelectMode() }
+        batchPlay.setOnClickListener { playSelected() }
+        batchAddPlaylist.setOnClickListener { addSelectedToPlaylist() }
+        batchDownload.setOnClickListener { downloadSelected() }
+        batchSelectAll.setOnClickListener { toggleSelectAll() }
 
         // 没有封面时也要是个深色底: 分页栏和标题都是白的, 浅底会直接看不见
         themeBg = ColorUtils.blendARGB(ContextCompat.getColor(this, R.color.brand), Color.BLACK, 0.82f)
@@ -206,10 +234,14 @@ class SingerActivity : AppCompatActivity() {
 
     private fun switchTab(albums: Boolean) {
         if (showingAlbums == albums) return
+        // 多选只属于「单曲」页: 切到专辑先退出, 图标也跟着收起来
+        if (albums) exitSelectMode()
         showingAlbums = albums
         refreshTabs()
         songList.visibility = if (albums) View.GONE else View.VISIBLE
         albumList.visibility = if (albums) View.VISIBLE else View.GONE
+        // 多选入口只在单曲页出现
+        multiButton.visibility = if (albums) View.GONE else View.VISIBLE
         updateCount()
         if (albums && !albumsLoaded) loadAlbums()
     }
@@ -224,6 +256,8 @@ class SingerActivity : AppCompatActivity() {
     private fun setupLists() {
         songAdapter = SongAdapter(
             onClick = { position, _ -> playFrom(position) },
+            onMore = { _, _, song -> showSongMenu(song) },
+            onToggleSelect = { song -> toggleSelect(song) },
             titleColor = Color.WHITE,
             subtitleColor = ColorUtils.setAlphaComponent(Color.WHITE, 0x9E)
         )
@@ -268,17 +302,11 @@ class SingerActivity : AppCompatActivity() {
         ImageLoader.load(this, singerCover, cover)
 
         ImageLoader.loadBitmap(this, singerCover, width = 192, onReady = { bmp ->
-            // 取封面**底部**那一块的主色, 不是整张图的主色:
-            // 背景要和封面下边缘同色, 中间那道渐变遮罩才看不出接缝, 画面像「封面化进了列表」
-            val bandH = (bmp.height / 3).coerceAtLeast(1)
-            val bottom = Bitmap.createBitmap(bmp, 0, bmp.height - bandH, bmp.width, bandH)
-            val palette = Palette.from(bottom).maximumColorCount(8).generate()
-            val main = palette.dominantSwatch?.rgb
-                ?: palette.vibrantSwatch?.rgb
-                ?: palette.mutedSwatch?.rgb
+            // 底色只从封面**底部**取: 背景要和下边缘同色, 中间那道渐变才看不出接缝。
+            // 具体取样/聚类/筛选规则都在 CoverColor 里 (底部 40%、k-means 6 簇、
+            // 过滤小占比与纯黑纯白、按色差与色相校验, 底部太花就退回均色)。
+            val main = com.portable.qqmusic.core.CoverColor.backgroundFor(bmp)
                 ?: return@loadBitmap
-            // 先压到 0.82 拿一个真正的深色, 再用 Contrast 兜底:
-            // 碰上亮封面 (白/亮黄) 0.82 仍不够, 交给 applyThemeColor 继续压
             applyThemeColor(main)
             toolbar.setBackgroundColor(
                 ColorUtils.setAlphaComponent(themeBg, (toolbarTitle.alpha * 255).toInt())
@@ -325,6 +353,155 @@ class SingerActivity : AppCompatActivity() {
         }
         // 迷你条也吃这个色: 让它和列表背景连成一片, 而不是用歌曲封面自己的颜色
         miniPlayer?.setBackground(bg)
+        updateOverscroll()
+    }
+
+    /** 单曲行右侧 ⋮: 下载 / 下一首播放 / 加入播放队列 / 加入歌单 */
+    private fun showSongMenu(song: Song) {
+        val actions = ArrayList<Pair<String, () -> Unit>>(4)
+        actions.add(getString(R.string.action_download) to {
+            DownloadManager.enqueue(this, listOf(song))
+            Tip.toast(this, getString(R.string.toast_added_to_download))
+        })
+        actions.add(getString(R.string.action_play_next) to {
+            PlayerController.appendNext(listOf(song))
+            Tip.toast(this, getString(R.string.toast_play_next_added))
+        })
+        actions.add(getString(R.string.action_add_to_queue) to {
+            PlayerController.appendToQueue(listOf(song))
+            Tip.toast(this, getString(R.string.toast_added_to_queue))
+        })
+        if (song.hasRealMid) {
+            actions.add(getString(R.string.action_add_to_playlist) to {
+                com.portable.qqmusic.ui.util.SongActions.addToPlaylist(this, song)
+            })
+        }
+        Menus.show(this, song.name, actions.map { it.first }) { which -> actions[which].second() }
+    }
+
+    /**
+     * 边缘回弹 (overscroll) 的颜色。
+     *
+     * 默认吃主题的 colorAccent, 是品牌绿; 但这一页的背景是封面取的深色, 绿光很跳。
+     * 目标是「同色系、但一眼能看见」: 暗背景往白提, 亮背景往黑压, 而且要保证
+     * 相对亮度差 >= [GLOW_MIN_CONTRAST], 否则光晕会被背景吃掉。
+     */
+    private fun updateOverscroll() {
+        val bg = themeBg
+        if (bg == 0) return
+        val glow = glowFor(bg)
+        if (glow == lastGlow) return
+        lastGlow = glow
+        installGlow(songList, glow)
+        installGlow(albumList, glow)
+    }
+
+    /**
+     * 按 WCAG 的相对亮度挑一个够亮/够暗的光晕色。
+     *
+     * 暗背景混白、亮背景混黑, 比例从 0.45 一路加到 1.0, 取第一个亮度差达标的;
+     * 加到纯白/纯黑还不达标 (极端中间灰) 就直接用纯白/纯黑。
+     */
+    private fun glowFor(bg: Int): Int {
+        val bgLum = Contrast.luminance(bg)
+        val target = if (bgLum < 0.5f) Color.WHITE else Color.BLACK
+        for (f in floatArrayOf(0.45f, 0.6f, 0.75f, 0.9f, 1f)) {
+            val c = ColorUtils.blendARGB(bg, target, f)
+            if (kotlin.math.abs(Contrast.luminance(c) - bgLum) >= GLOW_MIN_CONTRAST) return c
+        }
+        return target
+    }
+
+    private fun installGlow(list: RecyclerView, color: Int) {
+        list.edgeEffectFactory = object : RecyclerView.EdgeEffectFactory() {
+            override fun createEdgeEffect(view: RecyclerView, direction: Int): android.widget.EdgeEffect =
+                android.widget.EdgeEffect(view.context).apply { this.color = color }
+        }
+    }
+
+    private fun enterSelectMode() {
+        if (selecting || showingAlbums) return
+        selecting = true
+        selectedKeys.clear()
+        batchBar.visibility = View.VISIBLE
+        multiButton.visibility = View.GONE
+        songAdapter?.setSelection(true, emptySet())
+        batchSelectAll.setText(R.string.action_select_all)
+    }
+
+    private fun exitSelectMode() {
+        if (!selecting) return
+        selecting = false
+        selectedKeys.clear()
+        batchBar.visibility = View.GONE
+        multiButton.visibility = if (showingAlbums) View.GONE else View.VISIBLE
+        songAdapter?.setSelection(false, emptySet())
+    }
+
+    private fun toggleSelect(song: Song) {
+        if (!selecting) return
+        val key = song.key()
+        if (!selectedKeys.add(key)) selectedKeys.remove(key)
+        songAdapter?.setChecked(selectedKeys)
+        updateSelectAllLabel()
+    }
+
+    private fun toggleSelectAll() {
+        if (selectedKeys.size >= songs.size) {
+            selectedKeys.clear()
+        } else {
+            songs.forEach { selectedKeys.add(it.key()) }
+        }
+        songAdapter?.setChecked(selectedKeys)
+        updateSelectAllLabel()
+    }
+
+    private fun updateSelectAllLabel() {
+        batchSelectAll.setText(
+            if (songs.isNotEmpty() && selectedKeys.size >= songs.size) R.string.action_select_none
+            else R.string.action_select_all
+        )
+    }
+
+    private fun selectedSongs(): List<Song> = songs.filter { selectedKeys.contains(it.key()) }
+
+    private fun playSelected() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        PlayerController.setQueue(this, picked, 0, autoPlay = true)
+        exitSelectMode()
+    }
+
+    private fun addSelectedToPlaylist() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        com.portable.qqmusic.ui.util.SongActions.addToPlaylist(this, picked)
+    }
+
+    private fun downloadSelected() {
+        val picked = selectedSongs()
+        if (picked.isEmpty()) {
+            Tip.toast(this, getString(R.string.batch_nothing_selected))
+            return
+        }
+        DownloadManager.enqueue(this, picked)
+        Tip.toast(this, getString(R.string.batch_download_added, picked.size))
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (selecting) {
+            exitSelectMode()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     private fun updateCount() {

@@ -156,6 +156,7 @@
                     android:textColor="@color/white"
                     android:textSize="13sp" />
 
+                <!-- 歌单/专辑页这里原本是「下载」, 改成批量多选入口; 本地页也复用它 -->
                 <TextView
                     android:id="@+id/btn_download_all"
                     android:layout_width="wrap_content"
@@ -165,19 +166,29 @@
                     android:gravity="center"
                     android:paddingStart="16dp"
                     android:paddingEnd="16dp"
-                    android:text="@string/action_download"
+                    android:text="@string/action_multi_select"
                     android:textColor="@color/text_primary"
                     android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 卡片右侧: 上搜索、下排序 -->
+        <!-- 卡片右侧: 上多选(仅歌手页), 中搜索、下排序 -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_vertical"
             android:layout_marginStart="6dp"
             android:orientation="vertical">
+
+            <ImageButton
+                android:id="@+id/btn_multi"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_multi_select"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_multi"
+                android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_search_song"
@@ -201,6 +212,73 @@
                 android:tint="@color/text_secondary" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- 批量操作栏: 进入多选后出现在信息卡下方。左侧下载/删除, 右侧全选 -->
+    <LinearLayout
+        android:id="@+id/batch_bar"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:background="@color/bg_card"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:visibility="gone">
+
+            <TextView
+                android:id="@+id/batch_play"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_play_selected"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/batch_add_playlist"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_add_to_playlist"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/batch_download"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_download"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/batch_delete"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_delete"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/batch_select_all"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/action_select_all"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
 
     <!-- 列表与加载圈叠在一起: 加载圈浮在列表中央, 不占布局高度。
          之前加载圈放在最后当普通子 View, 切换本地/下载时它一出现就把下面的

@@ -134,6 +134,9 @@ object WebFavorite {
             w.setLayout(1, 1)
             w.setGravity(Gravity.TOP or Gravity.START)
             w.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            // 不要 dim: 这个窗口只是为了给 WebView 一个容器, 用户不该看到屏幕暗一下。
+            w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            w.setDimAmount(0f)
         }
 
         var settled = false
@@ -174,7 +177,7 @@ object WebFavorite {
                                 Diag.i("WebFavorite", "mid=$mid 结果=$ok")
                                 if (ok) {
                                     // 成功不打扰用户: 爱心在点下去时就已经翻过去了 (动画先行)。
-                                    UserApi.invalidateFavoriteMids()
+                                    UserApi.markFavorite(mid, true)
                                 } else {
                                     Tip.toast(
                                         activity,

@@ -101,14 +101,88 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/singer_count"
+        <!-- 单曲数量 + 右侧多选入口 (只有单曲页显示) -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/singer_count"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="12sp" />
+
+            <ImageButton
+                android:id="@+id/btn_multi"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/action_multi_select"
+                android:scaleType="centerInside"
+                android:src="@drawable/ic_multi" />
+        </LinearLayout>
+
+        <!-- 批量操作栏: 进入多选后出现在数量行下方 -->
+        <LinearLayout
+            android:id="@+id/batch_bar"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
-            android:paddingBottom="8dp"
-            android:textSize="12sp" />
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/batch_play"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_play_selected"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/batch_add_playlist"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_add_to_playlist"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/batch_download"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_marginStart="14dp"
+                android:gravity="center"
+                android:text="@string/action_download"
+                android:textColor="@color/brand"
+                android:textSize="13sp" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/batch_select_all"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/action_select_all"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+        </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"

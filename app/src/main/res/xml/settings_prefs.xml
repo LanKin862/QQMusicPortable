@@ -12,12 +12,6 @@
             android:title="@string/settings_account_login" />
 
         <Preference
-            android:key="account_import_cookie"
-            android:persistent="false"
-            android:summary="@string/settings_import_cookie_desc"
-            android:title="@string/settings_import_cookie" />
-
-        <Preference
             android:key="account_logout"
             android:persistent="false"
             android:title="@string/settings_logout" />

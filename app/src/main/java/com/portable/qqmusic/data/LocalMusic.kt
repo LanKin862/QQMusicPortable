@@ -35,9 +35,10 @@ object LocalMusic {
     /**
      * 查询本地音频。
      *
-     * @param limit 最多返回条数 (默认 500, 避免一次性构建过大的列表)
+     * @param limit 最多返回条数 (默认不限)。这里刻意不再兜 500 —— 本地真有上千首歌时
+     * 列表只显示前 500 首, 排在后面的歌在「本地」里根本找不到。
      */
-    fun query(context: Context, limit: Int = 500): List<Song> {
+    fun query(context: Context, limit: Int = Int.MAX_VALUE): List<Song> {
         val out = ArrayList<Song>(64)
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -70,7 +71,8 @@ object LocalMusic {
 
                 while (cursor.moveToNext() && out.size < limit) {
                     val id = cursor.getLong(idCol)
-                    val title = cursor.getString(titleCol) ?: continue
+                    // 老版本下载的文件名带 _HQ/_SQ/_HiRes, 媒体库没有 ID3 时把文件名当 TITLE
+                    val title = DownloadManager.stripQualitySuffix(cursor.getString(titleCol) ?: continue)
                     val artist = cleanTag(cursor.getString(artistCol)).ifEmpty { Song.UNKNOWN_SINGER }
                     val album = cleanTag(cursor.getString(albumCol))
                     val duration = (cursor.getLong(durCol) / 1000).toInt()

@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.portable.qqmusic.R
 import com.portable.qqmusic.data.api.Lyrics
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -62,6 +63,17 @@ class LyricsView @JvmOverloads constructor(
     private var paletteActive: Int? = null
 
     private var currentIndex = -1
+
+    /**
+     * 每一行「中心点」在整块歌词里的累计像素位置。
+     *
+     * 不能再用平均行高 [avgStep] 乘行号: 长歌词会折成两三行, 行高从 40dp 到 120dp 不等,
+     * 按平均步长画就会让长行和隔壁行叠在一起 —— 用户看到的「长句和前后句贴得太近」。
+     * 这里按每行真实高度累计, 行距(gap)才处处一致。
+     */
+    private var centers: FloatArray = FloatArray(0)
+
+    /** 所有行的平均步长, 只有 [centers] 不足两行时当兜底 (以及惯性滑行的换算) */
     private var avgStep = 100f
 
     // 弹簧状态
@@ -318,8 +330,51 @@ class LyricsView @JvmOverloads constructor(
             out.add(Row(layout, trans, h, line.timeMs, end, line.words))
         }
         rows = out
-        avgStep = out.map { it.height }.average().toFloat() + gap
+        // 逐行累计中心点: 长句(折行)自己占多高就留多高, 与相邻行之间始终保持同一个 gap
+        var acc = 0f
+        val c = FloatArray(out.size)
+        for (i in out.indices) {
+            c[i] = acc + out[i].height / 2f
+            acc += out[i].height + gap
+        }
+        centers = c
+        avgStep = if (out.size > 1) {
+            (c[c.size - 1] - c[0]) / (out.size - 1)
+        } else {
+            ((out.firstOrNull()?.height ?: 100) + gap).toFloat()
+        }
         invalidate()
+    }
+
+    /** 第 [index] 行的中心在屏幕上的 y (以 [display] 指定的位置贴住竖直中心) */
+    private fun rowCenterY(index: Int, display: Float): Float {
+        if (centers.isEmpty()) return height / 2f
+        val i = index.coerceIn(0, centers.size - 1)
+        return height / 2f + (centers[i] - posAt(display))
+    }
+
+    /**
+     * 把「行号(可以是小数)」插值成累计位置。
+     *
+     * 两行之间按中心距线性插值 —— 这样弹簧经过长行时也是匀速推进的, 不会一顿一顿。
+     */
+    private fun posAt(display: Float): Float {
+        if (centers.isEmpty()) return 0f
+        val maxIdx = centers.size - 1
+        val d = display.coerceIn(0f, maxIdx.toFloat())
+        val i = floor(d).toInt().coerceAtMost(maxIdx)
+        val j = (i + 1).coerceAtMost(maxIdx)
+        return centers[i] + (centers[j] - centers[i]) * (d - i)
+    }
+
+    /** [display] 附近一行的步长(像素/行), 惯性滑行与点击定位换算用 */
+    private fun stepAt(display: Float): Float {
+        if (centers.size < 2) return avgStep
+        val maxIdx = centers.size - 1
+        val d = display.coerceIn(0f, maxIdx.toFloat())
+        val i = floor(d).toInt().coerceAtMost(maxIdx)
+        val j = (i + 1).coerceAtMost(maxIdx)
+        return (centers[j] - centers[i]).coerceAtLeast(1f)
     }
 
     private fun makeLayout(text: String, paint: TextPaint, width: Int): StaticLayout =
@@ -345,7 +400,6 @@ class LyricsView @JvmOverloads constructor(
         // 手动翻的时候画面跟着手指走, 行号仍然是自动跟唱的那一行
         val display = manualAnchor ?: smooth
         val now = nowMs()
-        val centerY = (height / 2).toFloat()
         val colorNormal = paletteNormal
             ?: ContextCompat.getColor(context, R.color.text_on_player_secondary)
         val colorActive = paletteActive
@@ -363,11 +417,12 @@ class LyricsView @JvmOverloads constructor(
             val isActive = i == currentIndex || abs(offset) < ACTIVE_WINDOW
             val row = rows[i]
             applyTone(offset)
-            val top = centerY - row.height / 2f + offset * avgStep
+            val cy = rowCenterY(i, display)
+            val top = cy - row.height / 2f
 
             canvas.save()
             // 以行中心为缩放原点: 远景行往中心收, 不会在边缘露出空白
-            canvas.scale(toneScale, toneScale, pivotX, centerY + offset * avgStep)
+            canvas.scale(toneScale, toneScale, pivotX, cy)
             canvas.translate(paddingLeft.toFloat(), top + row.height / 2f - row.layout.height / 2f)
 
             val alpha = (toneAlpha * 255f).toInt().coerceIn(0, 255)
@@ -554,7 +609,7 @@ class LyricsView @JvmOverloads constructor(
         val offset = index - display
         if (abs(offset) > ACTIVE_WINDOW) return null
         val row = rows[index]
-        return (height / 2f) - row.height / 2f + offset * avgStep
+        return rowCenterY(index, display) - row.height / 2f
     }
 
     /** 当前行还有没唱完的部分吗。唱完了就不必再为扫色刷新 */
@@ -742,7 +797,7 @@ class LyricsView @JvmOverloads constructor(
         }
         // 手指往上推 vy<0, 内容也跟着往上走 = 行号变大。
         // advanceFling 里是 anchor - v*dt, 所以这里要保持 v 的符号, 别再取反。
-        flingVelocity = (vy / avgStep).coerceIn(-FLING_MAX_ROWS, FLING_MAX_ROWS)
+        flingVelocity = (vy / stepAt(manualAnchor ?: smooth)).coerceIn(-FLING_MAX_ROWS, FLING_MAX_ROWS)
         lastFrameUptime = SystemClock.uptimeMillis()
         postInvalidateOnAnimation()
     }
@@ -753,7 +808,7 @@ class LyricsView @JvmOverloads constructor(
         if (x < paddingLeft || x > width - paddingRight) return
         val display = manualAnchor ?: smooth
         val centerY = (height / 2).toFloat()
-        val index = display.roundToInt() + ((y - centerY) / avgStep).roundToInt()
+        val index = display.roundToInt() + ((y - centerY) / stepAt(display)).roundToInt()
         val row = rows.getOrNull(index) ?: return
         manualAnchor = null
         flingVelocity = 0f

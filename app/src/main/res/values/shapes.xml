@@ -13,6 +13,13 @@
     </style>
 
     <style name="PlayerCoverShape">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">12dp</item>
+    </style>
+
+    <!-- 播放页封面用这颗: ShapeableImageView 需要 base shapeAppearance 才会真的切角 -->
+    <style name="PlayerCoverShapeBase">
+        <item name="cornerFamily">rounded</item>
         <item name="cornerSize">12dp</item>
     </style>
 </resources>

@@ -524,27 +524,25 @@ object DownloadManager {
         .trim()
         .take(80)
 
-    /** 下载文件名: 歌手 - 歌名 (音质后缀) */
-    fun buildFileName(song: Song, quality: com.portable.qqmusic.core.Quality): String {
-        val suffix = when (quality) {
-            com.portable.qqmusic.core.Quality.STANDARD -> ""
-            com.portable.qqmusic.core.Quality.HQ -> "_HQ"
-            com.portable.qqmusic.core.Quality.SQ -> "_SQ"
-            com.portable.qqmusic.core.Quality.HIRES -> "_HiRes"
-        }
-        return baseNameOf(song) + suffix + quality.ext
-    }
+    /**
+     * 下载文件名: 歌手 - 歌名 + 扩展名。
+     *
+     * 音质**不进文件名**。早先会拼一个 `_HQ` / `_SQ` / `_HiRes` 后缀, 结果媒体库
+     * 拿不到 ID3 标题时退回用文件名当 TITLE, 列表里就显示成「歌名_HQ」。
+     */
+    fun buildFileName(song: Song, quality: com.portable.qqmusic.core.Quality): String =
+        baseNameOf(song) + quality.ext
 
-    /** 从磁盘文件名反推 [baseNameOf] (去掉扩展名与音质后缀) */
-    fun baseNameOfFile(name: String): String {
-        var s = name.substringBeforeLast('.', name)
+    /** 从磁盘文件名反推 [baseNameOf] (去掉扩展名与老版本留下的音质后缀) */
+    fun baseNameOfFile(name: String): String =
+        stripQualitySuffix(name.substringBeforeLast('.', name))
+
+    /** 去掉老版本文件名里的 `_HiRes` / `_HQ` / `_SQ` 尾巴 (媒体库 TITLE 也有同样问题) */
+    fun stripQualitySuffix(name: String): String {
         for (suffix in arrayOf("_HiRes", "_HQ", "_SQ")) {
-            if (s.endsWith(suffix)) {
-                s = s.dropLast(suffix.length)
-                break
-            }
+            if (name.endsWith(suffix)) return name.dropLast(suffix.length)
         }
-        return s
+        return name
     }
 
     /** 扫描下载目录, 恢复已下载列表 (冷启动时调用) */

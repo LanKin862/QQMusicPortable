@@ -48,6 +48,7 @@ import com.portable.qqmusic.data.api.UserApi
 import com.portable.qqmusic.player.PlayerController
 import com.portable.qqmusic.ui.util.Extras
 import com.portable.qqmusic.ui.util.ImageLoader
+import com.portable.qqmusic.ui.util.Menus
 import com.portable.qqmusic.ui.util.SongActions
 import com.portable.qqmusic.ui.util.Tip
 import com.portable.qqmusic.ui.view.LyricsView
@@ -63,7 +64,7 @@ import com.portable.qqmusic.ui.view.LyricsView
  * 歌词页再分为三段: 上 1/6 歌名与歌手、中 4/6 滚动歌词、下 1/6 歌词显示设置与播放按钮。
  * 进度与歌词都只在页面可见时以 500ms 轮询, 离开页面即停止。
  */
-class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
+class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserApi.FavoriteListener {
 
     private lateinit var pager: ViewPager2
     private lateinit var dotCover: View
@@ -149,6 +150,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
         setupControls()
 
         PlayerController.addListener(this)
+        UserApi.addFavoriteListener(this)
         refreshMode()
         bind(PlayerController.current())
     }
@@ -167,9 +169,23 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         PlayerController.removeListener(this)
+        UserApi.removeFavoriteListener(this)
         coverPage = null
         lyricPage = null
         super.onDestroy()
+    }
+
+    /**
+     * 收藏状态在别处变了 (比如在「我喜欢」列表里点了「从歌单中移除」)—— 爱心要跟着变。
+     *
+     * 回调可能在 IO 线程, 统一切回主线程再动视图。
+     */
+    override fun onFavoriteChanged(mid: String, favorite: Boolean) {
+        Task.main {
+            if (isFinishing || isDestroyed) return@main
+            favoriteStates[mid] = favorite
+            if (currentSong?.mid == mid) coverPage?.refreshFavorite(mid, favorite)
+        }
     }
 
     // ---------------- 顶部与底部 ----------------
@@ -287,6 +303,42 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
         override fun getItemCount(): Int = PAGE_COUNT
     }
 
+    /**
+     * 点副标题里的歌手名。
+     *
+     * 一位歌手直接进主页；多位（QQ 音乐用 `/` 拼接，如 `A/B`）先弹一个选择框 ——
+     * 否则永远只能进第一位歌手，其他歌手没有入口。
+     */
+    private fun chooseSinger(song: Song, ctx: android.content.Context) {
+        val names = song.singer.split('/', '／').map { it.trim() }.filter { it.isNotEmpty() }
+        if (names.isEmpty()) return
+        if (names.size == 1) {
+            openSinger(ctx, names[0], song.singerMids.firstOrNull().orEmpty())
+            return
+        }
+        Menus.show(this, getString(R.string.choose_singer), names) { which ->
+            openSinger(ctx, names[which], song.singerMids.getOrNull(which).orEmpty())
+        }
+    }
+
+    /** 进歌手主页；mid 缺失时按名字反查一次（推荐接口不带 singer mid），查不到退回搜索页 */
+    private fun openSinger(ctx: android.content.Context, name: String, mid: String) {
+        if (mid.isNotEmpty()) {
+            ctx.startActivity(Extras.singerIntent(ctx, mid, name))
+            return
+        }
+        Task.io {
+            val found = com.portable.qqmusic.data.api.SingerApi.findByName(name)
+            Task.main {
+                if (found == null || found.mid.isEmpty()) {
+                    ctx.startActivity(Extras.searchIntent(ctx, name))
+                } else {
+                    ctx.startActivity(Extras.singerIntent(ctx, found))
+                }
+            }
+        }
+    }
+
     /** 第 1 页: 封面 + 歌名 + 歌手 + 音质角标 */
     private inner class CoverPage(itemView: View) : RecyclerView.ViewHolder(itemView) {
         val cover: ImageView = itemView.findViewById(R.id.cover)
@@ -298,6 +350,15 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
         val favorite: ImageButton = itemView.findViewById(R.id.btn_favorite)
         val outputBadge: View = itemView.findViewById(R.id.output_badge)
         val outputText: TextView = itemView.findViewById(R.id.output_text)
+
+        /** 当前绑着的歌曲 mid, 用来判断「收藏变化是不是这一首的」。 */
+        private var boundMid: String = ""
+
+        /** 收藏状态在别处变了 —— 不重新问服务器, 直接按新状态画。 */
+        fun refreshFavorite(mid: String, on: Boolean) {
+            if (boundMid != mid) return
+            applyFavoriteIcon(on)
+        }
 
         /**
          * 输出通路: 设备 + 输出采样率 + 源是否同档。
@@ -351,6 +412,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
 
         fun bind(song: Song?) {
             if (song == null) {
+                boundMid = ""
                 title.text = getString(R.string.player_no_song)
                 subtitle.text = ""
                 cover.setImageResource(R.drawable.ic_music_placeholder)
@@ -362,6 +424,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
                 return
             }
             title.text = song.name
+            boundMid = song.mid
             bindSubtitle(song)
             bindOutput(song)
             ImageLoader.loadSong(itemView.context, song, cover)
@@ -389,24 +452,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
             if (singer.isNotEmpty()) {
                 span.setSpan(object : android.text.style.ClickableSpan() {
                     override fun onClick(widget: View) {
-                        val mid = song.singerMids.firstOrNull().orEmpty()
-                        val name = singer.split("/").first().trim()
-                        val ctx = widget.context
-                        if (mid.isNotEmpty()) {
-                            ctx.startActivity(Extras.singerIntent(ctx, mid, name))
-                            return
-                        }
-                        // 推荐接口不带 singer mid, 按名字反查一次 (头像顺带就有了); 查不到再退回搜索页
-                        Task.io {
-                            val found = com.portable.qqmusic.data.api.SingerApi.findByName(name)
-                            Task.main {
-                                if (found == null || found.mid.isEmpty()) {
-                                    ctx.startActivity(Extras.searchIntent(ctx, name))
-                                } else {
-                                    ctx.startActivity(Extras.singerIntent(ctx, found))
-                                }
-                            }
-                        }
+                        chooseSinger(song, widget.context)
                     }
 
                     override fun updateDrawState(ds: android.text.TextPaint) {
@@ -428,9 +474,15 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
                         ds.isUnderlineText = false
                     }
                 }, start, raw.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                subtitle.movementMethod = android.text.method.LinkMovementMethod.getInstance()
+            }
+            // 只要有一段可点就得给 movement method, 否则 ClickableSpan 收不到点击 ——
+            // 以前只在「专辑可点」时设置, 没有专辑的歌点歌手名是没反应的。
+            val singerClickable = singer.isNotEmpty()
+            val albumClickable = album.isNotEmpty() && song.albumMid.isNotEmpty()
+            subtitle.movementMethod = if (singerClickable || albumClickable) {
+                android.text.method.LinkMovementMethod.getInstance()
             } else {
-                subtitle.movementMethod = null
+                null
             }
 
             subtitle.text = span
@@ -439,8 +491,8 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
         /**
          * 歌名右侧的爱心 (与左侧下载按钮对称)。
          *
-         * 状态来源: [favoriteStates] 命中直接用; 没命中就问 [UserApi.favoriteMids]
-         * (它内部有进程内缓存, 同一首歌切走再切回来不会重复请求)。
+         * 状态来源: [favoriteStates] 命中直接用; 没命中就问 [UserApi.favoriteState]
+         * (缓存命中就直接判, 否则单查这一首并顺手预热整表, 不再同步翻三页)。
          */
         private fun bindFavorite(song: Song) {
             if (!song.hasRealMid) {
@@ -454,7 +506,8 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
             favorite.setOnClickListener { toggleFavorite(song) }
             if (known != null) return
             Task.io {
-                val fav = runCatching { UserApi.favoriteMids().contains(mid) }.getOrDefault(false)
+                // 缓存命中直接判; 没命中只查这一首 (1 个请求), 不再同步翻三页。
+                val fav = runCatching { UserApi.favoriteState(mid) }.getOrDefault(false)
                 Task.main {
                     if (isFinishing || isDestroyed) return@main
                     favoriteStates[mid] = fav
@@ -1078,25 +1131,25 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
 
     private fun showQualityPicker() {
         val qualities = Quality.allDesc()
-        val labels = qualities.map { it.label }.toTypedArray()
         val checked = qualities.indexOf(Settings.onlineQuality()).coerceAtLeast(0)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.quality_online)
-            .setSingleChoiceItems(labels, checked) { dialog, which ->
-                val q = qualities[which]
-                Settings.setOnlineQuality(q)
-                // 不在这里直接写角标: 角标显示的是**实际**音质, 要等重新解析完才知道。
-                // playAt 会清零记录, 解析成功后 notifySong 把角标刷成真在放的那档。
-                Tip.toast(this, getString(R.string.quality_switched, q.label))
-                // 用新音质重新解析并播放当前曲目
-                // ⚠️ 这里必须强制重播: playAt 默认会把「点击正在播放的歌」当成续播而不动作,
-                // 那样换了音质也不会重新解析, 角标和实际音质永远对不上。
-                if (currentSong != null) {
-                    PlayerController.playAt(this, PlayerController.currentIndex(), forceRestart = true)
-                }
-                dialog.dismiss()
+        Menus.show(
+            this,
+            getString(R.string.quality_online),
+            qualities.map { it.label },
+            checked
+        ) { which ->
+            val q = qualities[which]
+            Settings.setOnlineQuality(q)
+            // 不在这里直接写角标: 角标显示的是**实际**音质, 要等重新解析完才知道。
+            // playAt 会清零记录, 解析成功后 notifySong 把角标刷成真在放的那档。
+            Tip.toast(this, getString(R.string.quality_switched, q.label))
+            // 用新音质重新解析并播放当前曲目
+            // ⚠️ 这里必须强制重播: playAt 默认会把「点击正在播放的歌」当成续播而不动作,
+            // 那样换了音质也不会重新解析, 角标和实际音质永远对不上。
+            if (currentSong != null) {
+                PlayerController.playAt(this, PlayerController.currentIndex(), forceRestart = true)
             }
-            .show()
+        }
     }
 
     private fun showQueue() {
@@ -1105,9 +1158,26 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
             Tip.toast(this, getString(R.string.empty_list))
             return
         }
+        val panel = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = dp(12f)
+                setColor(androidx.core.content.ContextCompat.getColor(this@NowPlayingActivity, R.color.bg_card))
+            }
+            // 让子 View 也吃圆角 (否则列表的白色方块会盖住四个角)
+            clipToOutline = true
+        }
+        panel.addView(android.widget.TextView(this).apply {
+            text = getString(R.string.player_queue)
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(androidx.core.content.ContextCompat.getColor(this@NowPlayingActivity, R.color.text_primary))
+            setPadding(dp(16f).toInt(), dp(14f).toInt(), dp(16f).toInt(), dp(8f).toInt())
+        })
+
         val dialog = androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle(R.string.player_queue)
-            .setNegativeButton(R.string.action_close, null)
+            .setView(panel)
             .create()
 
         val recycler = RecyclerView(this)
@@ -1120,8 +1190,21 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener {
         )
         recycler.adapter = adapter
         adapter.submit(queue)
-        dialog.setView(recycler)
+        // 队列里也把正在放的那首标绿, 和歌单列表保持同一套视觉
+        adapter.setPlaying(PlayerController.current()?.key())
+        panel.addView(
+            recycler,
+            android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            )
+        )
         dialog.show()
+        dialog.window?.let { w ->
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            val screenW = resources.displayMetrics.widthPixels
+            val screenH = resources.displayMetrics.heightPixels
+            w.setLayout((screenW * 0.82f).toInt(), (screenH * 0.62f).toInt())
+        }
     }
 
     // ---------------- PlayerController.Listener ----------------

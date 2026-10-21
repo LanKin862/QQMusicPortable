@@ -29,8 +29,31 @@ class SongAdapter(
     private val showMoreOf: ((Song) -> Boolean)? = null,
     /** 深色或着色背景上要换一套文字颜色 (歌手页), 不传就沿用日间那套 */
     titleColor: Int? = null,
-    subtitleColor: Int? = null
+    subtitleColor: Int? = null,
+    /** 批量模式下点行/点勾选框的回调 */
+    private val onToggleSelect: ((Song) -> Unit)? = null
 ) : RecyclerView.Adapter<SongAdapter.Holder>() {
+
+    /** 批量多选模式: 行尾的「更多」换成勾选框 */
+    private var selecting = false
+    private var checkedKeys: Set<String> = emptySet()
+
+    /** 进入/退出批量模式 (选中集合一起换掉, 免得残留上一轮的勾) */
+    fun setSelection(selecting: Boolean, checked: Set<String>) {
+        this.selecting = selecting
+        // 一定要拷一份: 调用方那边是可变集合, 直接持有引用的话
+        // 下次「取消勾选」时它先被改掉再传进来, 内容比对恒等 → 界面不刷新
+        this.checkedKeys = HashSet(checked)
+        notifyDataSetChanged()
+    }
+
+    /** 只换勾选集合, 不重建列表 */
+    fun setChecked(keys: Set<String>) {
+        val next = HashSet(keys)
+        if (next == checkedKeys) return
+        checkedKeys = next
+        notifyDataSetChanged()
+    }
 
     private var titleTint: Int? = titleColor
     private var subTint: Int? = subtitleColor
@@ -153,10 +176,22 @@ class SongAdapter(
                 tag.visibility = View.GONE
             }
 
-            itemView.setOnClickListener { onClick(position, song) }
-            val showMore = onMore != null && (showMoreOf?.invoke(song) ?: true)
-            more.visibility = if (showMore) View.VISIBLE else View.GONE
-            more.setOnClickListener { v -> if (showMore) onMore?.invoke(v, position, song) }
+            itemView.setOnClickListener {
+                if (selecting) onToggleSelect?.invoke(song) else onClick(position, song)
+            }
+            if (selecting) {
+                val on = checkedKeys.contains(song.key())
+                more.visibility = View.VISIBLE
+                more.setImageResource(
+                    if (on) R.drawable.ic_check_circle_on else R.drawable.ic_check_circle_off
+                )
+                more.setOnClickListener { onToggleSelect?.invoke(song) }
+            } else {
+                val showMore = onMore != null && (showMoreOf?.invoke(song) ?: true)
+                more.visibility = if (showMore) View.VISIBLE else View.GONE
+                more.setImageResource(R.drawable.ic_more)
+                more.setOnClickListener { v -> if (showMore) onMore?.invoke(v, position, song) }
+            }
         }
     }
 }

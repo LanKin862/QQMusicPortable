@@ -20,16 +20,18 @@
             android:layout_height="0dp"
             android:layout_weight="1">
 
-            <com.google.android.material.imageview.ShapeableImageView
+            <!-- 控件自己做正方形, 圆角才能和图片边缘对齐 (见 SquareImageView 注释) -->
+            <com.portable.qqmusic.ui.view.SquareImageView
                 android:id="@+id/cover"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:layout_gravity="center"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp"
                 android:contentDescription="@string/tab_recommend"
-                android:scaleType="fitCenter"
+                android:scaleType="centerCrop"
                 android:src="@drawable/ic_music_placeholder"
+                app:shapeAppearance="@style/PlayerCoverShapeBase"
                 app:shapeAppearanceOverlay="@style/PlayerCoverShape" />
 
             <ProgressBar

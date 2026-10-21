@@ -20,65 +20,62 @@
 
             <include layout="@layout/view_top_bar" />
 
-            <!-- 账号状态条 -->
-            <LinearLayout
+            <!-- 账号卡片: 左右各留 14dp, 正好和下面「收藏 / 本地」两张卡片的外沿对齐 -->
+            <androidx.cardview.widget.CardView
                 android:id="@+id/account_row"
+                style="@style/Card.Base"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="@color/bg_card"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="16dp"
-                android:paddingTop="12dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="12dp">
-
-                <com.google.android.material.imageview.ShapeableImageView
-                    android:id="@+id/account_avatar"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
-                    android:contentDescription="@string/settings_account"
-                    android:scaleType="centerCrop"
-                    android:src="@drawable/ic_person"
-                    app:shapeAppearanceOverlay="@style/MiniCoverShape" />
+                android:layout_marginStart="14dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginEnd="14dp"
+                android:foreground="@color/ripple">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="16dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="12dp">
 
-                    <TextView
-                        android:id="@+id/account_name"
-                        style="@style/Text.Title"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:ellipsize="end"
-                        android:maxLines="1"
-                        android:text="@string/not_login" />
+                    <com.google.android.material.imageview.ShapeableImageView
+                        android:id="@+id/account_avatar"
+                        android:layout_width="44dp"
+                        android:layout_height="44dp"
+                        android:contentDescription="@string/settings_account"
+                        android:scaleType="centerCrop"
+                        android:src="@drawable/ic_person"
+                        app:shapeAppearanceOverlay="@style/MiniCoverShape" />
 
-                    <TextView
-                        android:id="@+id/account_sub"
-                        style="@style/Text.Secondary"
-                        android:layout_width="match_parent"
+                    <LinearLayout
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
-                        android:text="@string/login_now" />
+                        android:layout_marginStart="12dp"
+                        android:layout_weight="1"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/account_name"
+                            style="@style/Text.Title"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:ellipsize="end"
+                            android:maxLines="1"
+                            android:text="@string/not_login" />
+
+                        <TextView
+                            android:id="@+id/account_sub"
+                            style="@style/Text.Secondary"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="2dp"
+                            android:text="@string/login_now" />
+                    </LinearLayout>
                 </LinearLayout>
-
-                <TextView
-                    android:id="@+id/account_action"
-                    android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:background="@drawable/bg_pill_brand"
-                    android:gravity="center"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:text="@string/login_now"
-                    android:textColor="@color/white"
-                    android:textSize="13sp" />
-            </LinearLayout>
+            </androidx.cardview.widget.CardView>
 
             <!-- 收藏 / 本地 两张卡片 -->
             <LinearLayout

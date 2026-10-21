@@ -12,11 +12,13 @@ import com.bumptech.glide.request.target.CustomTarget
 import com.bumptech.glide.request.transition.Transition
 import com.portable.qqmusic.R
 import com.portable.qqmusic.core.Log
+import com.portable.qqmusic.core.Task
 import com.portable.qqmusic.data.LocalMeta
 import com.portable.qqmusic.core.Config
 import com.portable.qqmusic.data.api.Playlist
 import com.portable.qqmusic.data.api.Song
 import com.portable.qqmusic.player.PlayerController
+import java.io.File
 
 /**
  * 封面加载。
@@ -25,6 +27,12 @@ import com.portable.qqmusic.player.PlayerController
  * 避免在小内存设备上因封面缓存导致频繁 GC。
  */
 object ImageLoader {
+
+    /** 已经确认「文件里没有内嵌封面」的路径, 避免每次绑定都重新抠一遍 */
+    private val noArt = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    /** 正在抠封面的 ImageView → 路径, 列表复用时防止旧结果盖到新行上 */
+    private val pendingArt = java.util.WeakHashMap<ImageView, String>()
 
     private val roundOptions = RequestOptions()
         .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
@@ -52,26 +60,46 @@ object ImageLoader {
             load(context, null, target)
             return
         }
-        val url = song.coverUrl()
         if (!song.isLocal) {
-            load(context, url, target)
+            load(context, song.coverUrl(), target)
             return
         }
         /*
-         * 本地歌一律先问借到的封面。
+         * 本地歌的封面顺序: 借到的在线专辑封面 → 文件内嵌封面 → 应用占位图。
          *
-         * 下载留下的 albumMid 有时是空的、有时指向一张已经下架的图(直接 404),
-         * 光看 coverUrl() 非空就以为有封面, 结果是空白占位图 —— 之前就是这个坑。
-         * 借来的 albumMid 是按歌名重新搜出来的, 命中率更高。
+         * 以前这里用的是 MediaStore 的 albumart URI, 查不到内嵌封面的专辑会拿到
+         * 系统 MediaProvider 自带的「默认专辑图」—— 于是同一份列表里有的行是系统默认图、
+         * 有的行(albumId=0)是应用占位图, 看起来像「随机分配了一个通用封面」,
+         * 而且清应用数据也不会变(图存在系统媒体库那边)。现在统一自己解内嵌封面,
+         * 解不出来就一定是应用占位图。
          */
         val borrowedAlbum = LocalMeta.cached(context, song)?.albumMid.orEmpty()
         if (borrowedAlbum.isNotEmpty()) {
             load(context, String.format(Config.IMG_SONG, borrowedAlbum), target)
             return
         }
-        if (url.isNotEmpty()) {
-            load(context, url, target)
-            return
+        val path = song.localPath
+        if (path.isNotEmpty()) {
+            val art = artFile(context, path)
+            if (art.exists() && art.length() > 0) {
+                load(context, art.absolutePath, target)
+                return
+            }
+            if (!noArt.contains(path)) {
+                target.setImageResource(R.drawable.ic_music_placeholder)
+                pendingArt[target] = path
+                Task.io {
+                    val ok = extractArt(path, art)
+                    if (!ok) noArt.add(path)
+                    Task.main {
+                        if (pendingArt[target] == path) {
+                            pendingArt.remove(target)
+                            if (ok) load(context, art.absolutePath, target)
+                        }
+                    }
+                }
+                return
+            }
         }
         target.setImageResource(R.drawable.ic_music_placeholder)
         LocalMeta.resolve(context, song) { borrowed ->
@@ -85,7 +113,43 @@ object ImageLoader {
         }
     }
 
+    /** 内嵌封面解出来缓存成的图片文件; 用 路径+大小+修改时间 做键, 换文件自动失效 */
+    private fun artFile(context: Context, path: String): File {
+        val f = File(path)
+        val key = Integer.toHexString((path + "|" + f.length() + "|" + f.lastModified()).hashCode())
+        return File(File(context.cacheDir, "localart"), "$key.img")
+    }
+
+    /** 从音频文件里抠内嵌封面写进缓存目录; 没有封面返回 false */
+    private fun extractArt(path: String, out: File): Boolean = try {
+        val r = android.media.MediaMetadataRetriever()
+        val bytes = try {
+            r.setDataSource(path)
+            r.embeddedPicture
+        } finally {
+            try {
+                r.release()
+            } catch (_: Throwable) {
+            }
+        }
+        if (bytes == null || bytes.isEmpty()) {
+            false
+        } else {
+            out.parentFile?.mkdirs()
+            out.writeBytes(bytes)
+            true
+        }
+    } catch (t: Throwable) {
+        Log.w("ImageLoader.art", t)
+        false
+    }
+
     fun loadPlaylist(context: Context, playlist: Playlist?, target: ImageView) {
+        // 「我喜欢」是虚拟歌单, 接口不给封面 —— 用固定的米白底红心, 列表与详情页保持一致
+        if (playlist != null && playlist.dirid == com.portable.qqmusic.data.api.UserApi.FAVORITE_DIRID) {
+            target.setImageResource(R.drawable.bg_favorite_cover)
+            return
+        }
         load(context, playlist?.coverUrl(), target)
     }
 

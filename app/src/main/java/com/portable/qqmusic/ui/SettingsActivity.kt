@@ -12,6 +12,7 @@ import androidx.preference.SwitchPreferenceCompat
 import com.google.android.material.appbar.MaterialToolbar
 import com.portable.qqmusic.BuildConfig
 import com.portable.qqmusic.R
+import com.portable.qqmusic.core.Diag
 import com.portable.qqmusic.core.Log
 import com.portable.qqmusic.core.PlayFade
 import com.portable.qqmusic.core.Quality
@@ -78,10 +79,6 @@ class SettingsActivity : AppCompatActivity() {
                 startActivity(Intent(requireContext(), LoginActivity::class.java))
                 true
             }
-            findPreference<Preference>("account_import_cookie")?.setOnPreferenceClickListener {
-                showImportCookieDialog()
-                true
-            }
             findPreference<Preference>("account_logout")?.setOnPreferenceClickListener {
                 if (!Login.isLoggedIn()) {
                     toast("当前未登录")
@@ -105,66 +102,6 @@ class SettingsActivity : AppCompatActivity() {
                 getString(R.string.login_now)
             }
             findPreference<Preference>("account_logout")?.isEnabled = Login.isLoggedIn()
-        }
-
-        /**
-         * 手动导入 Cookie 对话框。
-         *
-         * 注意: 不能用 setMessage 放大段说明 —— Cookie 很长, 输入框本身就要占地方,
-         * 两者叠加会把「确定」按钮挤出屏幕。这里改成:
-         *  - 不给 message, 获取步骤放在设置项的 summary 里
-         *  - 输入框放进固定高度(约 140dp)的 ScrollView, 内容多了内部滚动
-         */
-        private fun showImportCookieDialog() {
-            val ctx = requireContext()
-            val density = resources.displayMetrics.density
-            val pad = (14 * density).toInt()
-
-            val input = android.widget.EditText(ctx).apply {
-                hint = getString(R.string.settings_import_cookie_hint)
-                setPadding(pad, pad, pad, pad)
-                gravity = android.view.Gravity.TOP or android.view.Gravity.START
-                isSingleLine = false
-                textSize = 12f
-                inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                    android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                    android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                setTextIsSelectable(true)
-                layoutParams = android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
-                )
-            }
-
-            val scroll = android.widget.ScrollView(ctx).apply {
-                addView(input)
-                layoutParams = android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-                    (140 * density).toInt()
-                )
-            }
-
-            val wrap = android.widget.FrameLayout(ctx).apply {
-                setPadding((20 * density).toInt(), (8 * density).toInt(), (20 * density).toInt(), 0)
-                addView(scroll)
-            }
-
-            androidx.appcompat.app.AlertDialog.Builder(ctx)
-                .setTitle(R.string.settings_import_cookie)
-                .setView(wrap)
-                .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.action_confirm) { _, _ ->
-                    val raw = input.text.toString()
-                    Task.io {
-                        val (ok, msg) = Login.importCookie(raw)
-                        Task.main {
-                            if (!isAdded) return@main
-                            toast(msg)
-                            if (ok) refreshAccountSummary()
-                        }
-                    }
-                }
-                .show()
         }
 
         // ---------------- 音质 ----------------
@@ -398,48 +335,78 @@ class SettingsActivity : AppCompatActivity() {
     private fun startLocalMatch() {
         val app = requireContext().applicationContext
         val pref = findPreference<Preference>("local_meta_match") ?: return
+        val runningText = getString(R.string.local_meta_running)
+        val hintText = getString(R.string.local_meta_match_hint)
+        val emptyText = getString(R.string.local_meta_empty)
         matching = true
         pref.isEnabled = false
-        pref.summary = getString(R.string.local_meta_running)
-        toast(getString(R.string.local_meta_running))
+        pref.summary = runningText
+        toast(runningText)
         Task.io {
+            // 既然要重新匹配, 之前的结果必须先作废: 否则命中旧缓存, 规则改了也看不出变化
+            LocalMeta.clearCache(app)
             val songs = try {
-                LocalMusic.query(app, 5000)
+                LocalMusic.query(app)
             } catch (t: Throwable) {
                 Log.w("Settings.localMatch", t)
                 emptyList()
             }
-            if (songs.isEmpty()) {
+            val locals = songs.filter { it.isLocal }
+            val total = locals.size
+            Diag.i("localMatch", "开始: 媒体库 ${songs.size} 首, 本地 ${total} 首")
+            if (total == 0) {
                 Task.main {
                     matching = false
                     pref.isEnabled = true
-                    pref.summary = getString(R.string.local_meta_match_hint)
-                    toast(getString(R.string.local_meta_empty))
+                    pref.summary = hintText
+                    toast(emptyText)
                 }
                 return@io
             }
-            var ok = 0
-            var done = 0
-            for (song in songs) {
-                if (!song.isLocal) continue
-                done++
-                if (done % 5 == 0 || done == songs.size) {
-                    val text = getString(R.string.local_meta_running) + " " + done + "/" + songs.size
-                    Task.main { pref.summary = text }
+            val started = System.currentTimeMillis()
+            val done = java.util.concurrent.atomic.AtomicInteger(0)
+            val ok = java.util.concurrent.atomic.AtomicInteger(0)
+            // 一首歌要发一到两次搜索, 串行跑几百首太慢。6 条线是折中:
+            // 再多容易被搜索接口限流, 反而更慢。
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(8)
+            val latch = java.util.concurrent.CountDownLatch(total)
+            var booted = 0
+            try {
+                for (song in locals) {
+                    pool.execute {
+                        try {
+                            if (LocalMeta.resolveBlocking(app, song) != null) ok.incrementAndGet()
+                        } catch (t: Throwable) {
+                            Diag.e("localMatch", "单曲失败 ${song.name}", t)
+                        } finally {
+                            val n = done.incrementAndGet()
+                            if (n % 5 == 0 || n == total) {
+                                val text = "$runningText $n/$total"
+                                Task.main { if (isAdded) pref.summary = text }
+                            }
+                            latch.countDown()
+                        }
+                    }
+                    booted++
                 }
-                // 已经匹配过的直接跳过, 重跑一次也不会把几十首歌重搜一遍
-                if (LocalMeta.cached(app, song) != null) {
-                    ok++
-                    continue
-                }
-                if (LocalMeta.resolveBlocking(app, song) != null) ok++
+            } catch (t: Throwable) {
+                Diag.e("localMatch", "提交任务失败 (已提交 $booted)", t)
             }
+            try {
+                latch.await()
+            } catch (t: Throwable) {
+                Diag.e("localMatch", "等待超时/中断", t)
+            } finally {
+                pool.shutdownNow()
+            }
+            val okCount = ok.get()
+            val cost = (System.currentTimeMillis() - started) / 1000
+            Diag.i("localMatch", "完成: 提交 $booted, 处理 ${done.get()}/$total, 命中 $okCount, 耗时 ${cost}s")
             Task.main {
                 matching = false
                 pref.isEnabled = true
-                pref.summary = getString(R.string.local_meta_match_hint)
-                toast(getString(R.string.local_meta_done, ok, songs.size))
-                Log.d("Settings.localMatch", "批量匹配完成 $ok/${songs.size}")
+                pref.summary = hintText
+                toast(getString(R.string.local_meta_done, okCount, total))
             }
         }
     }

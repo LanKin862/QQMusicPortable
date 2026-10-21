@@ -114,6 +114,9 @@ object Store {
         // 界面
         const val TAB_INDEX = "tab_index"
 
+        /** 搜索页的历史记录, 多条用 \n 分隔 (新的在前) */
+        const val SEARCH_HISTORY = "search_history"
+
         /**
          * 「我的」页歌单列表的失效标记。
          *

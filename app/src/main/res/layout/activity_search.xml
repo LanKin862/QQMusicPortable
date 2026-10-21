@@ -8,9 +8,11 @@
     android:background="@color/bg_page"
     android:orientation="vertical">
 
+    <!-- 搜索栏: 白底, 高度与主页面顶栏一致; 下面压一条分隔线, 别让历史区看起来像顶栏的一部分 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="52dp"
+        android:background="@color/bg_page"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="6dp"
@@ -28,7 +30,7 @@
 
         <LinearLayout
             android:layout_width="0dp"
-            android:layout_height="38dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:background="@drawable/bg_search_box"
             android:gravity="center_vertical"
@@ -82,6 +84,64 @@
             android:textSize="15sp" />
     </LinearLayout>
 
+    <!-- 搜索栏与下方内容之间的分隔线 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/divider" />
+
+    <!-- 历史搜索: 顶栏下面单独一段, 没有历史时整块隐藏 -->
+    <LinearLayout
+        android:id="@+id/history_box"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/bg_card"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/search_history"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <ImageButton
+                android:id="@+id/btn_clear_history"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/search_history_clear"
+                android:padding="8dp"
+                android:src="@drawable/ic_delete"
+                app:tint="@color/text_hint" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="4dp"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/history_tags"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
+    </LinearLayout>
+
     <!-- 分类: 单曲 / 歌手 / 歌单。三者是同一个搜索接口的不同 search_type, 切换时各发一次请求 -->
     <LinearLayout
         android:id="@+id/search_tabs"
@@ -121,15 +181,16 @@
             android:textSize="14sp" />
     </LinearLayout>
 
+    <!-- 空结果提示: 只有真的搜完没结果时才显示, 默认隐藏, 不占版面 -->
     <TextView
         android:id="@+id/search_state"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
         android:paddingTop="30dp"
-        android:text="@string/search_hint"
         android:textColor="@color/text_hint"
-        android:textSize="14sp" />
+        android:textSize="14sp"
+        android:visibility="gone" />
 
     <!-- 加载圈浮在列表中央, 不占布局高度 —— 否则它一出现就会把下面的迷你播放条顶上去 -->
     <FrameLayout

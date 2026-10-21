@@ -27,7 +27,7 @@ object Diag {
 
     private const val DIR = "diag"
     private const val FILE = "boot.log"
-    private const val MAX_BYTES = 512 * 1024L
+    private const val MAX_BYTES = 2 * 1024 * 1024L
 
     private val started = AtomicBoolean(false)
     private val stamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
@@ -84,6 +84,7 @@ object Diag {
         if (t != null) append("E", tag, throwableToString(t))
     }
 
+    @Synchronized
     private fun append(level: String, tag: String, msg: String) {
         if (sinks.isEmpty()) return
         val line = "[${stamp.format(Date())}] $level/$tag: $msg\n"

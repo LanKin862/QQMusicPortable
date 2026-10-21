@@ -4,6 +4,7 @@ import com.portable.qqmusic.core.Crypto
 import com.portable.qqmusic.core.Diag
 import com.portable.qqmusic.core.Http
 import com.portable.qqmusic.core.J
+import com.portable.qqmusic.core.Task
 import com.portable.qqmusic.data.MetaCache
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,6 +20,40 @@ import org.json.JSONObject
  *
  * 全部需要登录态 (Cookie + g_tk)。
  */
+
+/**
+ * 「我喜欢」/ 歌单写操作的结果。
+ *
+ * 以前只回 Boolean, 失败时调用方只能笼统弹一句「操作失败」。带上 [code] 之后才能分开:
+ * 客户端侧的原因 (没登录、参数不全、网络异常) 给不同提示, 服务端的驳回码直接把数字透出来。
+ * 唯一特殊对待的是 [CODE_NEED_WEB_SIGN] —— 它是明文 `AddSonglist` 被挡的码, 只有这种失败
+ * 才值得换网页签名通道重试 (那条路要等 6~9 秒, 不能什么失败都去走)。
+ */
+class FavoriteResult(val ok: Boolean, val code: Int) {
+
+    val notLoggedIn: Boolean get() = code == CODE_NOT_LOGGED_IN
+
+    val badArgument: Boolean get() = code == CODE_BAD_ARGUMENT
+
+    val networkError: Boolean get() = code == CODE_NETWORK
+
+    val needsWebSign: Boolean get() = code == CODE_NEED_WEB_SIGN
+
+    companion object {
+        const val CODE_OK = 0
+        const val CODE_NOT_LOGGED_IN = -1
+
+        /** dirId / songId 不合法, 发出去也没意义 */
+        const val CODE_BAD_ARGUMENT = -2
+
+        /** 请求抛异常 (超时、断网、JSON 解析失败) */
+        const val CODE_NETWORK = -3
+
+        /** 历史注释里的 80105: g_tk 算错时 `AddSonglist` 恒回这个码 */
+        const val CODE_NEED_WEB_SIGN = 80105
+    }
+}
+
 object UserApi {
 
     /** 我喜欢歌单的固定 id */
@@ -271,14 +306,22 @@ object UserApi {
      *
      * 走明路的 `AddSonglist` 对自建歌单和「我喜欢」都可用, 不需要碰网页版的
      * `musics.fcg?encoding=ag-1&sign=...` 那条 VMP 签名通道。
+     *
+     * ⚠️ 2026-10-19 复测: 同一个账号下 `DelSonglist` 仍回 `code=0`, 但 `AddSonglist`
+     * 又稳定回 `80105` —— 说明不只是 g_tk 的问题, 添加这条多半还认别的字段
+     * (官方文档里是 `songId/songType/tid` 三个一起传)。见 6.67 末段的待验证清单。
      */
-    fun setFavorite(song: Song, favorite: Boolean): Boolean {
-        if (!Login.isLoggedIn()) return false
+    fun setFavorite(song: Song, favorite: Boolean): FavoriteResult {
+        if (!Login.isLoggedIn()) return FavoriteResult(false, FavoriteResult.CODE_NOT_LOGGED_IN)
         val method = if (favorite) "AddSonglist" else "DelSonglist"
-        val ok = writeSongToPlaylist(FAVORITE_DIRID, song, method)
-        Diag.i("UserApi", "$method 我喜欢 mid=${song.mid} songId=${song.songId} ok=$ok")
-        if (ok) invalidateFavoriteMids()
-        return ok
+        val result = writeSongToPlaylist(FAVORITE_DIRID, song, method)
+        Diag.i(
+            "UserApi",
+            "$method 我喜欢 mid=${song.mid} songId=${song.songId} ok=${result.ok} code=${result.code}"
+        )
+        // 成功后就地改缓存里这一个 mid, 不再整体清空 (否则下一首歌又要翻三页)。
+        if (result.ok) markFavorite(song.mid, favorite)
+        return result
     }
 
     /**
@@ -290,12 +333,21 @@ object UserApi {
      * `songType` 固定 0 (普通歌曲): `Song.type` 是本项目自定义的在线/本地标记,
      * 不是服务端那个 songType。
      */
-    fun addSongToPlaylist(dirId: Long, song: Song): Boolean =
-        writeSongToPlaylist(dirId, song, "AddSonglist")
+    fun addSongToPlaylist(dirId: Long, song: Song): Boolean {
+        val ok = writeSongToPlaylist(dirId, song, "AddSonglist").ok
+        // 从「加入歌单」里选到「我喜欢」时, 服务端效果和收藏一样, 本地状态也得跟上。
+        if (ok && dirId == FAVORITE_DIRID) markFavorite(song.mid, true)
+        return ok
+    }
 
     /** 从自建歌单里移除一首歌。只解除歌单与歌的关系, 不动文件。 */
-    fun removeSongFromPlaylist(dirId: Long, song: Song): Boolean =
-        writeSongToPlaylist(dirId, song, "DelSonglist")
+    fun removeSongFromPlaylist(dirId: Long, song: Song): Boolean {
+        val ok = writeSongToPlaylist(dirId, song, "DelSonglist").ok
+        // 在「我喜欢」列表里点「从歌单中移除」等同于取消收藏, 同样要广播出去,
+        // 否则播放页的爱心还亮着 (用户反馈的现象)。
+        if (ok && dirId == FAVORITE_DIRID) markFavorite(song.mid, false)
+        return ok
+    }
 
     /**
      * 单曲是否在「我喜欢」里。
@@ -320,19 +372,23 @@ object UserApi {
         }
     }
 
-    private fun writeSongToPlaylist(dirId: Long, song: Song, method: String): Boolean {
-        if (!Login.isLoggedIn()) return false
-        if (dirId <= 0L || song.songId <= 0L) return false
+    private fun writeSongToPlaylist(dirId: Long, song: Song, method: String): FavoriteResult {
+        if (!Login.isLoggedIn()) return FavoriteResult(false, FavoriteResult.CODE_NOT_LOGGED_IN)
+        if (dirId <= 0L || song.songId <= 0L) {
+            return FavoriteResult(false, FavoriteResult.CODE_BAD_ARGUMENT)
+        }
         return try {
             val info = JSONObject().put("songType", 0).put("songId", song.songId)
             val param = JSONObject().put("dirId", dirId).put("v_songInfo", JSONArray().put(info))
             val mod = MusicU.call("music.musicasset.PlaylistDetailWrite", method, param)
                 .mod(MusicU.DEFAULT_KEY)
             Diag.i("UserApi", "$method dirId=$dirId song=${song.name} code=${mod.code} ok=${mod.isOk}")
-            mod.isOk
+            // 写操作只认 code == 0: 这两个方法成功时 data 可能是空对象甚至缺省,
+            // 用 Mod.isOk (还要求 data 非 null) 会把成功误判成失败。
+            FavoriteResult(mod.code == FavoriteResult.CODE_OK, mod.code)
         } catch (t: Throwable) {
             Diag.e("UserApi", "$method 失败 dirId=$dirId", t)
-            false
+            FavoriteResult(false, FavoriteResult.CODE_NETWORK)
         }
     }
 
@@ -358,16 +414,98 @@ object UserApi {
     private var favoriteMidsCache: Set<String>? = null
 
     /**
+     * 这次进程里用户亲手改过的收藏状态。
+     *
+     * 背景预热是全量拉取的, 拉回来时可能已经落后于用户刚才那一下点击;
+     * 建表时把这里的改动盖上去, 才不会出现「刚收藏完, 切走再回来又变未收藏」。
+     */
+    private val localFavoriteEdits = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private val favoriteWarming = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * 收藏状态变了几次。
+     *
+     * 「我喜欢」列表页靠它判断「我离开的这段时间里收藏有没有变过」—— 变了就重新拉,
+     * 否则取消收藏之后回到列表还是旧内容 (用户反馈的正是这个)。
+     */
+    @Volatile
+    var favoriteRevision: Int = 0
+        private set
+
+    /** 收藏变化统一走这里, 界面各自把爱心/列表同步过来。回调可能在 IO 线程。 */
+    interface FavoriteListener {
+        fun onFavoriteChanged(mid: String, favorite: Boolean)
+    }
+
+    private val favoriteListeners =
+        java.util.concurrent.CopyOnWriteArrayList<FavoriteListener>()
+
+    fun addFavoriteListener(l: FavoriteListener) {
+        favoriteListeners.addIfAbsent(l)
+    }
+
+    fun removeFavoriteListener(l: FavoriteListener) {
+        favoriteListeners.remove(l)
+    }
+
+    /**
      * 只读缓存。返回 null 表示还没查过 —— 弹菜单这类「不能等网络」的地方用它,
      * 命中就直接判状态, 没命中再自己决定要不要异步补。
      */
     fun favoriteMidsCached(): Set<String>? = favoriteMidsCache
 
     /**
-     * 「我喜欢」里所有歌的 mid, 供播放页爱心图标判断当前状态。
+     * 单曲收藏状态 —— 界面判断爱心亮不亮的唯一入口。
      *
-     * 进程内缓存: 这个集合只在「我喜欢」变动后才会变, 而变动都要经过本类,
-     * 所以没必要每次进播放页都翻几页网络。
+     * 顺序是「本地刚改的 → 整表缓存 → 单查这一首」。第一档很重要: 点下去之后、服务端
+     * 还没答复的那几秒里, 用户退出去再进播放页也应该看到新状态, 而不是一次旧查询的结果。
+     */
+    fun favoriteState(mid: String): Boolean {
+        if (mid.isEmpty() || !Login.isLoggedIn()) return false
+        localFavoriteEdits[mid]?.let { return it }
+        favoriteMidsCache?.let { return it.contains(mid) }
+        warmUpFavoriteMids()
+        return isSongFan(mid)
+    }
+
+    /**
+     * 收藏状态变了, 就地增删缓存里的这一个 mid, 并把新状态广播出去。
+     *
+     * 以前是 [invalidateFavoriteMids] 整体清空, 于是收藏一首之后, 下一首歌又得重新翻三页。
+     * 缓存还没建好 (null) 时只记进 [localFavoriteEdits], 等全量拉回来再盖上去。
+     *
+     * 这个方法同时承担「乐观更新」: 点击时先按目标状态写一遍, 失败再写回来。
+     */
+    fun markFavorite(mid: String, favorite: Boolean) {
+        if (mid.isEmpty()) return
+        localFavoriteEdits[mid] = favorite
+        favoriteMidsCache?.let { cur ->
+            favoriteMidsCache = if (favorite) cur + mid else cur - mid
+        }
+        favoriteRevision++
+        favoriteListeners.forEach { runCatching { it.onFavoriteChanged(mid, favorite) } }
+    }
+
+    /** 后台把「我喜欢」整表拉一次, 让后续的单曲判断都走缓存; 已经在拉就不重复触发。 */
+    private fun warmUpFavoriteMids() {
+        if (favoriteMidsCache != null || !Login.isLoggedIn()) return
+        if (!favoriteWarming.compareAndSet(false, true)) return
+        Task.io {
+            try {
+                favoriteMids()
+            } catch (t: Throwable) {
+                Diag.e("UserApi", "预热我喜欢失败", t)
+            } finally {
+                favoriteWarming.set(false)
+            }
+        }
+    }
+
+    /**
+     * 「我喜欢」里所有歌的 mid。
+     *
+     * 进程内缓存, 只给预热和需要整表的场景用; 单纯判断一首歌用 [favoriteState]。
      */
     fun favoriteMids(force: Boolean = false): Set<String> {
         favoriteMidsCache?.let { if (!force) return it }
@@ -379,12 +517,14 @@ object UserApi {
             if (raw < FAV_PAGE) break
             begin += FAV_PAGE
         }
+        // 拉取期间用户可能刚收藏/取消过, 以本地改动为准。
+        localFavoriteEdits.forEach { (mid, fav) -> if (fav) out.add(mid) else out.remove(mid) }
         Diag.i("UserApi", "我喜欢 mid 集合 ${out.size} 个")
         favoriteMidsCache = out
         return out
     }
 
-    /** 收藏状态变了, 让上面的集合失效 */
+    /** 整表作废, 下次 [favoriteMids] 重新拉。单曲收藏变化不需要它, 用 [markFavorite]。 */
     fun invalidateFavoriteMids() {
         favoriteMidsCache = null
     }

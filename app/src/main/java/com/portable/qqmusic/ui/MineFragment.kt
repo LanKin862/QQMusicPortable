@@ -31,6 +31,7 @@ import com.portable.qqmusic.player.PlayerController
 import com.portable.qqmusic.ui.adapter.PlaylistAdapter
 import com.portable.qqmusic.ui.util.Extras
 import com.portable.qqmusic.ui.util.ImageLoader
+import com.portable.qqmusic.ui.util.Menus
 import com.portable.qqmusic.ui.util.Tip
 
 /**
@@ -48,7 +49,6 @@ class MineFragment : Fragment() {
     private lateinit var avatar: ImageView
     private lateinit var accountName: TextView
     private lateinit var accountSub: TextView
-    private lateinit var accountAction: TextView
     private lateinit var favoriteSub: TextView
     private lateinit var localSub: TextView
 
@@ -72,7 +72,6 @@ class MineFragment : Fragment() {
         avatar = view.findViewById(R.id.account_avatar)
         accountName = view.findViewById(R.id.account_name)
         accountSub = view.findViewById(R.id.account_sub)
-        accountAction = view.findViewById(R.id.account_action)
         favoriteSub = view.findViewById(R.id.favorite_sub)
         localSub = view.findViewById(R.id.local_sub)
 
@@ -223,9 +222,7 @@ class MineFragment : Fragment() {
         // 用列表归属判断而不是当前 tab —— 菜单可能在切换 tab 的动画期间被点开。
         val isCollected = collected.contains(playlist)
         val items = arrayOf("播放全部", "下载全部", "加入播放队列", "复制歌单名", "删除歌单")
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle(playlist.title)
-            .setItems(items) { _, which ->
+        Menus.show(requireContext(), playlist.title, items.toList()) { which ->
                 when (which) {
                     0 -> withPlaylistSongs(playlist) { songs ->
                         if (songs.isEmpty()) Tip.toast(requireContext(), getString(R.string.empty_list))
@@ -259,8 +256,7 @@ class MineFragment : Fragment() {
                     }
                     else -> confirmDeletePlaylist(playlist, isCollected)
                 }
-            }
-            .show()
+        }
     }
 
     /**
@@ -275,14 +271,14 @@ class MineFragment : Fragment() {
             "删除歌单入口 title=${playlist.title} isCollected=$isCollected " +
                 "tid=${playlist.tid} dirid=${playlist.dirid} id=${playlist.id}"
         )
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle(if (isCollected) "取消收藏「${playlist.title}」?" else "删除「${playlist.title}」?")
-            .setMessage(
-                if (isCollected) "只会从你的收藏里移除, 不会影响对方创建的歌单。"
-                else "歌单会被删除, 且无法恢复。"
-            )
-            .setNegativeButton("取消", null)
-            .setPositiveButton(if (isCollected) "取消收藏" else "删除") { _, _ ->
+        Menus.confirm(
+            requireContext(),
+            if (isCollected) "取消收藏「${playlist.title}」?" else "删除「${playlist.title}」?",
+            if (isCollected) "只会从你的收藏里移除, 不会影响对方创建的歌单。"
+            else "歌单会被删除, 且无法恢复。",
+            if (isCollected) "取消收藏" else "删除",
+            "取消"
+        ) {
                 Task.io {
                     val mid = playlist.tid
                     val id = if (isCollected) mid else playlist.dirid
@@ -304,8 +300,7 @@ class MineFragment : Fragment() {
                         }
                     }
                 }
-            }
-            .show()
+        }
     }
 
     /** 后台取歌单歌曲, 回到主线程执行 [action] */
@@ -341,7 +336,6 @@ class MineFragment : Fragment() {
         } else {
             getString(R.string.login_now)
         }
-        accountAction.text = if (loggedIn) getString(R.string.action_settings) else getString(R.string.login_now)
         if (loggedIn && Login.avatar().isNotEmpty()) {
             ImageLoader.load(requireContext(), Login.avatar(), avatar)
         } else {
@@ -397,7 +391,7 @@ class MineFragment : Fragment() {
         lastLocalCountAt = now
         val ctx = context ?: return
         Task.io {
-            val count = runCatching { LocalMusic.query(ctx, 500).size }.getOrDefault(0)
+            val count = runCatching { LocalMusic.query(ctx).size }.getOrDefault(0)
             Task.main {
                 if (!isAdded) return@main
                 localCount = count
@@ -433,30 +427,30 @@ class MineFragment : Fragment() {
             startActivity(Intent(requireContext(), LoginActivity::class.java))
             return
         }
-        val input = android.widget.EditText(requireContext()).apply {
-            hint = getString(R.string.create_playlist)
-            setSingleLine()
-        }
-        androidx.appcompat.app.AlertDialog.Builder(requireContext())
-            .setTitle(R.string.create_playlist)
-            .setView(input)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(R.string.action_confirm) { _, _ ->
-                val name = input.text.toString().trim()
-                if (name.isEmpty()) return@setPositiveButton
-                Task.io {
-                    val ok = UserApi.createPlaylist(name)
-                    Task.main {
-                        if (!isAdded) return@main
-                        Tip.toast(
-                            requireContext(),
-                            if (ok) "已创建: $name" else "创建失败, 请稍后重试"
-                        )
-                        if (ok) loadLibrary()
+        Menus.showInput(
+            context = requireContext(),
+            title = getString(R.string.create_playlist),
+            hint = getString(R.string.create_playlist_hint),
+            initial = "",
+            onTextChanged = {},
+            onClear = {},
+            onCancel = {},
+            onConfirm = { name ->
+                if (name.isNotEmpty()) {
+                    Task.io {
+                        val ok = UserApi.createPlaylist(name)
+                        Task.main {
+                            if (!isAdded) return@main
+                            Tip.toast(
+                                requireContext(),
+                                if (ok) "已创建: $name" else "创建失败, 请稍后重试"
+                            )
+                            if (ok) loadLibrary()
+                        }
                     }
                 }
             }
-            .show()
+        )
     }
 
     // ---------------- 权限 ----------------

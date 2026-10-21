@@ -106,6 +106,26 @@ object MetaCache {
         0L
     }
 
+    /**
+     * 按 key 前缀删缓存。
+     *
+     * 文件名是「key 去掉非法字符」+「hash」, 前缀不变形, 所以能直接比对。
+     * 目前只有本地曲目匹配 (`local_meta_`) 用它 —— 规则变了或者用户点了
+     * 「重新匹配」, 旧结论必须先作废。
+     */
+    fun clearPrefix(context: Context, prefix: String) {
+        if (prefix.isEmpty()) return
+        try {
+            Storage.metaDir(context).listFiles()?.forEach {
+                if (it.isFile && it.name.startsWith(prefix) && it.delete()) {
+                    // 删掉就删掉了, 失败也不影响本次匹配结果
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w("MetaCache.clearPrefix", t)
+        }
+    }
+
     /** 登录状态变化时清空: 换了账号, 上一个账号的歌单不能留在界面上 */
     fun clearAll(context: Context) {
         try {
