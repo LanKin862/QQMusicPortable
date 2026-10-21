@@ -701,7 +701,9 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
      * 没有封面、或者取色失败, 就整屏回落默认主题。
      */
     private fun applyCoverPalette(song: Song?) {
-        val url = song?.coverUrl()
+        // 用 SongArt 而不是 song.coverUrl(): 本地歌的 coverUrl() 是 MediaStore 的
+        // albumart URI, 取到的是系统默认专辑图的颜色, 和屏幕上显示的封面完全两回事。
+        val url = com.portable.qqmusic.ui.util.SongArt.coverUrl(this, song)
         if (url.isNullOrEmpty()) {
             resetPlayerTheme()
             return
@@ -746,11 +748,29 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
                     themeMain = main
                     themeSub = ColorUtils.blendARGB(liftForTrack(accent), Color.WHITE, 0.42f)
                     applySongPalette()
+                    applyPagerOverscroll(main)
                 }
             },
             // 封面拉不到就别让上一首的配色留在屏幕上
             onFail = { Task.main { if (!isFinishing && !isDestroyed) resetPlayerTheme() } }
         )
+    }
+
+    /**
+     * 左右翻页的 overscroll 光晕颜色。
+     *
+     * ViewPager2 内部就是一个 RecyclerView, 拿它的第一个子 View 换成自定义
+     * EdgeEffectFactory 即可; 颜色取封面算出来的主色, 翻到头时光晕和页面同色系。
+     */
+    private fun applyPagerOverscroll(color: Int) {
+        val rv = pager.getChildAt(0) as? androidx.recyclerview.widget.RecyclerView ?: return
+        rv.edgeEffectFactory = object : androidx.recyclerview.widget.RecyclerView.EdgeEffectFactory() {
+            override fun createEdgeEffect(
+                view: androidx.recyclerview.widget.RecyclerView,
+                direction: Int
+            ): android.widget.EdgeEffect =
+                android.widget.EdgeEffect(view.context).apply { this.color = color }
+        }
     }
 
     /**
@@ -828,6 +848,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
         seekBar.progressDrawable =
             frostedProgress(liftForTrack(ContextCompat.getColor(this, R.color.brand)))
         resetIconTint()
+        applyPagerOverscroll(ContextCompat.getColor(this, R.color.brand))
         coverPage?.applyPalette(
             ContextCompat.getColor(this, R.color.text_on_player),
             ContextCompat.getColor(this, R.color.text_on_player_secondary)

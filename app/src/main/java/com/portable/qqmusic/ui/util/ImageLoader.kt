@@ -173,6 +173,9 @@ object ImageLoader {
         }
     }
 
+    /** 内嵌封面解出来缓存成的图片文件 (供 [SongArt] 复用); 没有解过就是不存在的文件 */
+    fun localArtFile(context: Context, path: String): File = artFile(context, path)
+
     /** 内嵌封面解出来缓存成的图片文件; 用 路径+大小+修改时间 做键, 换文件自动失效 */
     private fun artFile(context: Context, path: String): File {
         val f = File(path)

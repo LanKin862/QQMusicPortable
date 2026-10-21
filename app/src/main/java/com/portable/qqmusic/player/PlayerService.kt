@@ -74,6 +74,9 @@ class PlayerService : Service() {
      * 封面按 mid 缓存最近 3 张, 切回来时不用再解码一次。
      */
     private val sessionArt = object : android.util.LruCache<String, android.graphics.Bitmap>(3) {}
+
+    /** 封面为空时已经安排过重试的 mid, 避免无限重推 */
+    private val artRetry = java.util.Collections.synchronizedSet(HashSet<String>())
     private var sessionArtLoading = ""
     private val handler = Handler(Looper.getMainLooper())
 
@@ -404,7 +407,9 @@ class PlayerService : Service() {
                     .build()
             )
             val song = PlayerController.current()
-            val cover = song?.coverUrl().orEmpty()
+            // 本地歌不能用 coverUrl(): 那是 MediaStore 的 albumart URI, 没内嵌封面时
+            // 给的是系统媒体库默认图; 这里走「借到的在线封面 → 内嵌封面」的顺序
+            val cover = com.portable.qqmusic.ui.util.SongArt.coverUrl(this, song)
             val art = if (song == null) null else sessionArt.get(song.mid)
             val meta = android.support.v4.media.MediaMetadataCompat.Builder()
                 .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song?.name ?: "")
@@ -428,6 +433,13 @@ class PlayerService : Service() {
                 meta.putBitmap(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ART, art)
             }
             mediaSession.setMetadata(meta.build())
+
+            // 本地歌的在线信息可能还没匹配完 (封面为空): 过几秒再推一次, 只试一次
+            if (song != null && cover.isEmpty() && artRetry.add(song.mid)) {
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    publishState()
+                }, 4_000L)
+            }
 
             // 首次碰到这首歌时异步取一次封面, 拿到后重新推一遍元数据
             if (song != null && cover.isNotEmpty() &&
