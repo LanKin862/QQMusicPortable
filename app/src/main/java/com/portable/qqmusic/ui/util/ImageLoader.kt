@@ -15,10 +15,12 @@ import com.portable.qqmusic.core.Log
 import com.portable.qqmusic.core.Task
 import com.portable.qqmusic.data.LocalMeta
 import com.portable.qqmusic.core.Config
+import com.portable.qqmusic.core.Storage
 import com.portable.qqmusic.data.api.Playlist
 import com.portable.qqmusic.data.api.Song
 import com.portable.qqmusic.player.PlayerController
 import java.io.File
+import java.io.FileOutputStream
 
 /**
  * 封面加载。
@@ -39,16 +41,74 @@ object ImageLoader {
         .placeholder(R.drawable.ic_music_placeholder)
         .error(R.drawable.ic_music_placeholder)
 
+    // ---------------- 封面永久缓存 ----------------
+    //
+    // Glide 的磁盘缓存会按 HTTP 头做新鲜度判断、也会被 LRU/配额挤掉, 封面过一阵就
+    // 要重新下载一次。这里在 cache/image 下再存一份「自己管理、永不过期」的原图:
+    // 命中就直接从文件加载, 不再走网络; 容量上限交给设置里「封面缓存」那一档,
+    // 超了由 CacheManager 按最旧优先清, 不做时间淘汰。
+
+    /**
+     * 缓存文件名前缀带版本号: 上一版把「目标尺寸解码后的位图」当原图存了,
+     * 播放页的大封面读到的是缩略图尺寸, 看着糊。换前缀让那些文件自然失效。
+     */
+    private fun coverFile(context: Context, url: String): File {
+        val name = "cover2_" + md5(url) + ".img"
+        return File(Storage.imageDir(context), name)
+    }
+
+    private fun md5(text: String): String = try {
+        val d = java.security.MessageDigest.getInstance("MD5").digest(text.toByteArray())
+        val sb = StringBuilder(d.size * 2)
+        for (b in d) sb.append(String.format("%02x", b))
+        sb.toString()
+    } catch (t: Throwable) {
+        Integer.toHexString(text.hashCode())
+    }
+
+    private fun cachedCover(context: Context, url: String): File? {
+        val f = coverFile(context, url)
+        return if (f.exists() && f.length() > 0) f else null
+    }
+
+    /**
+     * 把封面原件落一份到永久缓存。
+     *
+     * 关键: 存的是 Glide **源文件**那一份 (原图), 不是解码后按控件尺寸缩过的位图 ——
+     * 否则小列表先加载过一次, 播放页的大封面就会读到缩略图尺寸, 明显发糊。
+     */
+    private fun prefetchCover(context: Context, url: String) {
+        val app = context.applicationContext
+        Task.io {
+            try {
+                val f = coverFile(app, url)
+                if (f.exists() && f.length() > 0) return@io
+                val src = Glide.with(app).asFile().load(url).submit().get()
+                if (src == null || !src.exists() || src.length() == 0L) return@io
+                val tmp = File(f.parentFile, f.name + ".tmp")
+                src.inputStream().use { ins ->
+                    FileOutputStream(tmp).use { outs -> ins.copyTo(outs) }
+                }
+                if (f.exists()) f.delete()
+                if (!tmp.renameTo(f)) tmp.delete()
+            } catch (t: Throwable) {
+                Log.w("ImageLoader.prefetchCover", t)
+            }
+        }
+    }
+
     fun load(context: Context, url: String?, target: ImageView) {
         if (url.isNullOrEmpty()) {
             target.setImageResource(R.drawable.ic_music_placeholder)
             return
         }
         try {
+            val cached = cachedCover(context, url)
             Glide.with(context.applicationContext)
-                .load(url)
+                .load(cached ?: url)
                 .apply(roundOptions)
                 .into(target)
+            if (cached == null) prefetchCover(context, url)
         } catch (t: Throwable) {
             Log.w("ImageLoader", t)
             target.setImageResource(R.drawable.ic_music_placeholder)
@@ -186,9 +246,11 @@ object ImageLoader {
             return
         }
         try {
+            val cached = cachedCover(context, url)
+            if (cached == null) prefetchCover(context, url)
             Glide.with(context.applicationContext)
                 .asBitmap()
-                .load(url)
+                .load(cached ?: url)
                 .apply(RequestOptions().diskCacheStrategy(DiskCacheStrategy.AUTOMATIC))
                 .into(object : CustomTarget<Bitmap>(width, width) {
                     override fun onResourceReady(resource: Bitmap, transition: Transition<in Bitmap>?) {

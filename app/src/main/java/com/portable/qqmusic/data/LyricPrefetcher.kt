@@ -46,9 +46,15 @@ object LyricPrefetcher {
             size > MAX_CACHED_DOCS
     }
 
-    /** 原始歌词的磁盘缓存前缀与有效期: 歌词基本不变, 存 30 天 */
+    /**
+     * 原始歌词的磁盘缓存前缀与有效期。
+     *
+     * 歌词是静态资源, 不会自己变; 过期只会让下次进歌词页再等一次网络。
+     * 这里给 0 = 永不过期 (MetaCache 里 ttl <= 0 直接跳过时间判定),
+     * 空间不够时由 CacheManager 按「歌词与译文」那一档配额统一清。
+     */
     private const val SRC_PREFIX = "lyric_src_"
-    private const val SRC_TTL_MS = 30L * 24 * 60 * 60 * 1000
+    private const val SRC_TTL_MS = 0L
 
     /**
      * 取歌词 (原文 LRC, 服务端译文 LRC), 带磁盘缓存。

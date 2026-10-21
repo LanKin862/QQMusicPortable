@@ -66,6 +66,15 @@ class PlayerService : Service() {
 
     private lateinit var engine: AudioEngine
     private lateinit var mediaSession: MediaSessionCompat
+
+    /**
+     * 状态栏/锁屏媒体卡片的封面。
+     *
+     * 系统那份卡片只认 [MediaMetadataCompat] 里的位图 (或 URI); 不给的话就是一块灰底。
+     * 封面按 mid 缓存最近 3 张, 切回来时不用再解码一次。
+     */
+    private val sessionArt = object : android.util.LruCache<String, android.graphics.Bitmap>(3) {}
+    private var sessionArtLoading = ""
     private val handler = Handler(Looper.getMainLooper())
 
     @Volatile
@@ -333,7 +342,8 @@ class PlayerService : Service() {
 
     private fun buildNotification(): android.app.Notification {
         val song = PlayerController.current()
-        val cover: Bitmap? = null // 封面在 PlayerController 里异步加载后通过 setCover 注入
+        // 已经取到过的封面直接用在通知上; 没取到时先空着, 拿到后 publishState 会重建
+        val cover: Bitmap? = song?.let { sessionArt.get(it.mid) }
         return PlayerNotification.build(
             this,
             song,
@@ -343,6 +353,34 @@ class PlayerService : Service() {
             cover,
             mediaSession.sessionToken
         )
+    }
+
+    /**
+     * 系统媒体卡片的封面圆角。
+     *
+     * 拿不到系统卡片的圆角半径, 就按用户建议「把歌曲详情页的封面圆角缩放过来」:
+     * 详情页封面是 `屏宽 - 56dp` 的正方形、圆角 12dp, 取这个比例再乘到封面位图上。
+     * 位图会被系统缩放到卡片尺寸, 圆角因此等比缩放, 观感和详情页一致。
+     */
+    private fun roundedArt(src: android.graphics.Bitmap): android.graphics.Bitmap {
+        val dm = resources.displayMetrics
+        val coverSide = (dm.widthPixels - 56f * dm.density).coerceAtLeast(1f)
+        val ratio = (12f * dm.density / coverSide).coerceIn(0.02f, 0.30f)
+        val size = src.width.coerceAtMost(src.height)
+        if (size <= 0) return src
+        val radius = (size * ratio).coerceAtLeast(1f)
+        val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            isFilterBitmap = true
+        }
+        val rect = android.graphics.RectF(0f, 0f, size.toFloat(), size.toFloat())
+        canvas.drawRoundRect(rect, radius, radius, paint)
+        paint.xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_IN)
+        val left = (src.width - size) / 2f
+        val top = (src.height - size) / 2f
+        canvas.drawBitmap(src, -left, -top, paint)
+        return out
     }
 
     /** 状态变化时同步通知与 MediaSession */
@@ -366,17 +404,47 @@ class PlayerService : Service() {
                     .build()
             )
             val song = PlayerController.current()
-            mediaSession.setMetadata(
-                android.support.v4.media.MediaMetadataCompat.Builder()
-                    .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song?.name ?: "")
-                    .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST, song?.singer ?: "")
-                    .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ALBUM, song?.albumName ?: "")
-                    .putLong(
-                        android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION,
-                        engine.durationMs.toLong()
-                    )
-                    .build()
-            )
+            val cover = song?.coverUrl().orEmpty()
+            val art = if (song == null) null else sessionArt.get(song.mid)
+            val meta = android.support.v4.media.MediaMetadataCompat.Builder()
+                .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_TITLE, song?.name ?: "")
+                .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ARTIST, song?.singer ?: "")
+                .putString(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ALBUM, song?.albumName ?: "")
+                .putLong(
+                    android.support.v4.media.MediaMetadataCompat.METADATA_KEY_DURATION,
+                    engine.durationMs.toLong()
+                )
+            if (cover.isNotEmpty()) {
+                // 给 URI: 系统自己去取, 比塞位图省内存; 位图再补一份给不吃 URI 的 ROM
+                meta.putString(
+                    android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, cover
+                )
+                meta.putString(
+                    android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ART_URI, cover
+                )
+            }
+            if (art != null && song != null) {
+                meta.putBitmap(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ALBUM_ART, art)
+                meta.putBitmap(android.support.v4.media.MediaMetadataCompat.METADATA_KEY_ART, art)
+            }
+            mediaSession.setMetadata(meta.build())
+
+            // 首次碰到这首歌时异步取一次封面, 拿到后重新推一遍元数据
+            if (song != null && cover.isNotEmpty() &&
+                sessionArt.get(song.mid) == null && sessionArtLoading != song.mid
+            ) {
+                val mid = song.mid
+                sessionArtLoading = mid
+                com.portable.qqmusic.ui.util.ImageLoader.loadBitmap(
+                    this, cover, 512,
+                    onReady = { bmp ->
+                        sessionArtLoading = ""
+                        sessionArt.put(mid, roundedArt(bmp))
+                        if (PlayerController.current()?.mid == mid) publishState()
+                    },
+                    onFail = { sessionArtLoading = "" }
+                )
+            }
         } catch (t: Throwable) {
             Log.w("PlayerService.media", t)
         }

@@ -333,17 +333,23 @@ class SingerActivity : AppCompatActivity() {
         refreshTabs()
         songAdapter?.setColors(textMain(), textSub())
         albumAdapter?.notifyDataSetChanged()
+        // 批量栏和多选图标也吃文字色: 深色底上的品牌绿读不清
+        val on = textMain()
+        val dim = textSub()
+        multiButton.setColorFilter(on)
+        batchPlay.setTextColor(on)
+        batchAddPlaylist.setTextColor(on)
+        batchDownload.setTextColor(on)
+        batchSelectAll.setTextColor(dim)
         root.setBackgroundColor(bg)
-        // 渐变遮罩: 上透明下背景色, 让封面底边「化」进信息流
+        // 底部保留渐变: 封面下边缘「化」进列表底色, 接缝看不出来
+        coverFade.visibility = View.VISIBLE
         coverFade.background = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
             intArrayOf(Color.TRANSPARENT, bg)
         )
-        // 顶部反着来一次: 主题色 → 透明, 让状态栏这一条和封面接得上
-        coverTopFade.background = GradientDrawable(
-            GradientDrawable.Orientation.BOTTOM_TOP,
-            intArrayOf(Color.TRANSPARENT, bg)
-        )
+        // 顶部直接显示原照片, 不做过渡
+        coverTopFade.visibility = View.GONE
         @Suppress("DEPRECATION")
         run { window.navigationBarColor = bg }
         // 状态栏是透明的, 图标黑白必须自己判断: 系统只给一个开关, 不会看背景
