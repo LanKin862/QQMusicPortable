@@ -36,6 +36,7 @@ import com.portable.qqmusic.core.Log
 import com.portable.qqmusic.core.PlayMode
 import com.portable.qqmusic.core.Quality
 import com.portable.qqmusic.core.Settings
+import com.portable.qqmusic.core.Store
 import com.portable.qqmusic.core.Task
 import com.portable.qqmusic.data.DownloadManager
 import com.portable.qqmusic.data.LocalMeta
@@ -111,7 +112,8 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
     private val favoriteStates = HashMap<String, Boolean>()
 
     /** 歌词显示设置 */
-    private var lyricTextScale = 1.0f
+    /** 歌词字号档位: 上次调过的会记住, 第一次用默认 1.0 */
+    private var lyricTextScale = Store.int(Store.K.LYRIC_SCALE, 100) / 100f
     private var lyricTranslation = true
 
     private val tick = object : Runnable {
@@ -293,7 +295,11 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
                 holder.bind(currentSong, currentDoc)
                 holder.sizeButton.setOnClickListener { cycleLyricSize() }
                 holder.transButton.setOnClickListener { toggleTranslation() }
-                holder.lyrics.onSeek = { ms -> PlayerController.seekTo(ms) }
+                holder.lyrics.onSeek = { ms ->
+            PlayerController.seekTo(ms)
+            // 点歌词本来就是「我要从这儿听」, 暂停态顺手开播
+            if (!PlayerController.isPlaying) PlayerController.resume()
+        }
                 syncLyric(positionMs(), smooth = false)
                 syncPlayIcons()
                 applySongPalette()
@@ -1114,6 +1120,7 @@ class NowPlayingActivity : AppCompatActivity(), PlayerController.Listener, UserA
             lyricTextScale < 1.49f -> 1.5f
             else -> 0.85f
         }
+        Store.putInt(Store.K.LYRIC_SCALE, (lyricTextScale * 100f).toInt())
         val page = lyricPage
         if (page != null) {
             // 记录当前行, 重建后按时间重新定位, 避免跳回开头

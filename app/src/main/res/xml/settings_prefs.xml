@@ -59,27 +59,10 @@
     <PreferenceCategory app:title="@string/cache_limit">
 
         <ListPreference
-            android:key="cache_limit"
+            android:key="cache_data"
             android:persistent="false"
-            android:title="@string/cache_limit" />
-
-        <ListPreference
-            android:key="cache_image_mb"
-            android:persistent="false"
-            android:title="@string/cache_image"
-            android:summary="@string/cache_tier_hint" />
-
-        <ListPreference
-            android:key="cache_meta_mb"
-            android:persistent="false"
-            android:title="@string/cache_meta"
-            android:summary="@string/cache_tier_hint" />
-
-        <ListPreference
-            android:key="cache_lyric_mb"
-            android:persistent="false"
-            android:title="@string/cache_lyric"
-            android:summary="@string/cache_tier_hint" />
+            android:title="@string/cache_limit"
+            android:summary="@string/cache_limit_hint" />
 
         <Preference
             android:key="cache_clear"

@@ -174,15 +174,16 @@ class SettingsActivity : AppCompatActivity() {
         // ---------------- 存储 ----------------
 
         private fun bindStorage() {
-            val limit = findPreference<ListPreference>("cache_limit")
+            // 只有一项: 歌单数据 + 封面 + 歌词的**合计**上限 (歌曲缓存在启动时清掉, 不占额度)
+            val limit = findPreference<ListPreference>("cache_data")
             limit?.apply {
-                val options = Settings.CACHE_OPTIONS
+                val options = Settings.CACHE_DATA_OPTIONS
                 entries = options.map { Settings.cacheLimitLabel(it) }.toTypedArray()
                 entryValues = options.map { it.toString() }.toTypedArray()
-                value = Settings.cacheLimitMb().toString()
+                value = Settings.cacheDataMb().toString()
                 setOnPreferenceChangeListener { _, newValue ->
-                    val mb = (newValue as? String)?.toIntOrNull() ?: Settings.DEFAULT_CACHE_MB
-                    Settings.setCacheLimitMb(mb)
+                    val mb = (newValue as? String)?.toIntOrNull() ?: Settings.DEFAULT_DATA_MB
+                    Settings.setCacheDataMb(mb)
                     Task.io {
                         CacheManager.enforceLimit(requireContext().applicationContext)
                         CacheManager.refreshUsage(requireContext().applicationContext)
@@ -191,9 +192,6 @@ class SettingsActivity : AppCompatActivity() {
                     true
                 }
             }
-            bindCacheTier("cache_image_mb", Settings.cacheImageMb(), Settings::setCacheImageMb)
-            bindCacheTier("cache_meta_mb", Settings.cacheMetaMb(), Settings::setCacheMetaMb)
-            bindCacheTier("cache_lyric_mb", Settings.cacheLyricMb(), Settings::setCacheLyricMb)
 
             refreshCacheSummary()
 
@@ -260,47 +258,17 @@ class SettingsActivity : AppCompatActivity() {
          * 最后才动歌单数据 —— 用户能直接从这一行看出哪层在被吃空间。
          */
         private fun refreshCacheSummary() {
-            val pref = findPreference<ListPreference>("cache_limit") ?: return
-            val limit = Settings.cacheLimitLabel(Settings.cacheLimitMb())
+            val pref = findPreference<ListPreference>("cache_data") ?: return
+            val limit = Settings.cacheLimitLabel(Settings.cacheDataMb())
             val ctx = requireContext().applicationContext
             com.portable.qqmusic.core.Task.io {
-                val byTier = com.portable.qqmusic.data.CacheManager.usedBytesByTier(ctx)
-                val audio = byTier[com.portable.qqmusic.data.CacheManager.Tier.AUDIO] ?: 0L
-                val image = byTier[com.portable.qqmusic.data.CacheManager.Tier.IMAGE] ?: 0L
-                val meta = byTier[com.portable.qqmusic.data.CacheManager.Tier.META] ?: 0L
-                val lyric = byTier[com.portable.qqmusic.data.CacheManager.Tier.LYRIC] ?: 0L
+                val data = com.portable.qqmusic.data.CacheManager.dataUsedBytes(ctx)
+                val audio = com.portable.qqmusic.data.CacheManager.audioUsedBytes(ctx)
                 com.portable.qqmusic.core.Task.main {
                     if (!isAdded) return@main
-                    pref.summary = "上限 $limit · 已用 ${fmtSize(audio + image + meta + lyric)}\n" +
-                        "歌曲 ${fmtSize(audio)} · 封面 ${fmtSize(image)} · " +
-                        "歌单 ${fmtSize(meta)} · 歌词 ${fmtSize(lyric)}"
+                    pref.summary = "上限 $limit · 已用 ${fmtSize(data)}（歌单 + 封面 + 歌词）\n" +
+                        "歌曲缓存 ${fmtSize(audio)}（退出应用后自动清理，只留当前一首）"
                 }
-            }
-        }
-
-        /**
-         * 绑定一个分层配额项。
-         *
-         * 与总上限不同: 这几层只在**自己超配额**时才删自己最旧的文件, 总量超了轮不到它们
-         * (歌曲缓存先被牺牲)。所以改完只需要重跑一次 enforceLimit, 不用清库。
-         */
-        private fun bindCacheTier(key: String, current: Int, apply: (Int) -> Unit) {
-            val pref = findPreference<ListPreference>(key) ?: return
-            val options = Settings.CACHE_TIER_OPTIONS
-            pref.entries = options.map { Settings.cacheLimitLabel(it) }.toTypedArray()
-            pref.entryValues = options.map { it.toString() }.toTypedArray()
-            pref.value = current.toString()
-            pref.summary = Settings.cacheLimitLabel(current)
-            pref.setOnPreferenceChangeListener { _, newValue ->
-                val mb = (newValue as? String)?.toIntOrNull() ?: Settings.DEFAULT_TIER_MB
-                apply(mb)
-                pref.summary = Settings.cacheLimitLabel(mb)
-                Task.io {
-                    CacheManager.enforceLimit(requireContext().applicationContext)
-                    CacheManager.refreshUsage(requireContext().applicationContext)
-                    Task.main { refreshCacheSummary() }
-                }
-                true
             }
         }
 

@@ -12,6 +12,7 @@
     <string name="action_confirm">确定</string>
     <string name="action_close">关闭</string>
     <string name="action_more">更多</string>
+    <string name="more_recommend_title">更多为你推荐</string>
     <string name="action_prev">上一首</string>
     <string name="action_next">下一首</string>
     <string name="action_play">播放</string>
@@ -115,12 +116,9 @@
     <string name="volume_balance_desc">自动调整不同歌曲的播放音量</string>
     <string name="loudness_adapt">响度自适应</string>
     <string name="loudness_adapt_desc">根据设备与环境自动优化响度</string>
-    <string name="cache_limit">音乐缓存上限</string>
+    <string name="cache_limit">缓存上限</string>
+    <string name="cache_limit_hint">歌单 + 封面 + 歌词合计，超出后按最旧优先清理</string>
     <string name="cache_limit_used">已用 %1$s</string>
-    <string name="cache_image">封面缓存上限</string>
-    <string name="cache_meta">歌单数据上限</string>
-    <string name="cache_lyric">歌词与译文上限</string>
-    <string name="cache_tier_hint">与总上限独立，超了只清这一层的旧文件</string>
     <string name="cache_clear">清除缓存</string>
     <string name="cache_cleared">已清除 %1$s 缓存</string>
     <string name="download_location">歌曲下载存储位置</string>

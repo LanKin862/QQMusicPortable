@@ -12,6 +12,7 @@
     <string name="action_confirm">OK</string>
     <string name="action_close">Close</string>
     <string name="action_more">More</string>
+    <string name="more_recommend_title">More for you</string>
     <string name="action_prev">Previous</string>
     <string name="action_next">Next</string>
     <string name="action_play">Play</string>
@@ -103,6 +104,7 @@
     <string name="loudness_adapt">Loudness adaptation</string>
     <string name="loudness_adapt_desc">Adapt loudness to device and environment</string>
     <string name="cache_limit">Cache limit</string>
+    <string name="cache_limit_hint">Playlists + covers + lyrics combined; oldest files are cleared first</string>
     <string name="cache_limit_used">%1$s used</string>
     <string name="cache_clear">Clear cache</string>
     <string name="cache_cleared">Cleared %1$s</string>

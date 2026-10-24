@@ -19,6 +19,7 @@ import com.portable.qqmusic.data.api.Lyrics
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.round
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -103,6 +104,45 @@ class LyricsView @JvmOverloads constructor(
     private var flingVelocity = 0f
     private var velocityTracker: VelocityTracker? = null
 
+    /**
+     * 点歌词跳转时的一段过渡。
+     *
+     * 之前是「等 500ms 的 tick 把 currentIndex 甩过去, 再让弹簧从旧行追新行」——
+     * 弹簧一上来速度极快, 远距离时中间七八行会在一瞬间划过去, 看着像硬切换;
+     * 而起点还是那条旧的目标行, 不是用户手指点的位置。
+     *
+     * 现在从「当前显示位置」出发, 用和正常换行**同一套临界阻尼弹簧**走向被点中那一行,
+     * 所以点在上面就往下飘、点在下面就往上升, 观感跟自动换行完全一致;
+     * 只是这段过程里不点亮、不扫色。
+     */
+    private var tapAnimating = false
+    private var tapAnimTo = 0f
+    /** 过渡起点(点击那一刻的显示位置) */
+    private var tapAnimFrom = 0f
+
+    /** 中央窄带里被暂停缩放的行: 行号 -> 进入窄带时的字号比例 */
+    private val bandFrozen = HashMap<Int, Float>()
+
+    /**
+     * 点歌词 seek 之后的宽限期。
+     *
+     * seek 会让播放器短暂报 paused(重新缓冲), 扫色时钟跟着停, 看起来就是「扫色卡住几秒」。
+     * 这段时间里忽略 paused, 时钟照走。
+     */
+    private var seekGraceUntil = 0L
+
+    /** 点按跳转的落点时间与发起时刻: 落位时据此推算此刻的播放位置 */
+    private var tapSeekMs = 0
+    private var tapSeekUptime = 0L
+
+    /** 跳转后等待播放器真正到位的窗口: 期间不按旧位置纠正画面 */
+    private var seekHoldMs = 0
+    private var seekHoldUntil = 0L
+
+    /** 落位后把「未唱部分压暗」从 1 渐变到 DIM_UNSUNG 的起点 */
+    private var landFadeAt = 0L
+    private var landFading = false
+
     init {
         setWillNotDraw(false)
         // 字号和封面上的歌名对齐(19sp + bold), 歌词读起来才和标题是一个层级。
@@ -140,6 +180,9 @@ class LyricsView @JvmOverloads constructor(
 
     /** 播放状态: 暂停时扫色停在锚点不动 */
     fun setPlaying(value: Boolean) {
+        // seek 引起的短暂 paused 不算真的暂停
+        if (!value && SystemClock.uptimeMillis() < seekGraceUntil) return
+
         if (playing == value) return
         // 切换的瞬间把已经走过的时长压进锚点: 不压的话暂停期间那段
         // 会在恢复播放时被算进去, 扫色直接往前蹦一块
@@ -150,6 +193,21 @@ class LyricsView @JvmOverloads constructor(
     }
 
     fun syncTo(positionMs: Int, smooth: Boolean = true) {
+        // 点歌词跳转后播放器可能还停在旧位置几百毫秒: 这段时间先别按旧位置纠正,
+        // 否则画面会被拽回原行, 看起来就是「跳过去、闪一下、再跳回来」
+        var holding = false
+        if (smooth && seekHoldMs > 0) {
+            val landed = abs(positionMs - seekHoldMs) <= SEEK_HOLD_TOLERANCE_MS
+            if (!landed && SystemClock.uptimeMillis() < seekHoldUntil) {
+                // 位置先不认, 但帧循环必须继续 —— 早先这里直接 return,
+                // 结果扫色跟着停住, 看起来就是落位后还空等一段
+                holding = true
+            } else {
+                seekHoldMs = 0
+            }
+        } else if (!smooth) {
+            seekHoldMs = 0
+        }
         /*
          * 顺序很重要: 先按外部位置修正锚点, 再拿修正过的时钟判行。
          *
@@ -159,6 +217,8 @@ class LyricsView @JvmOverloads constructor(
         if (!smooth) {
             anchorMs = positionMs
             anchorUptime = SystemClock.uptimeMillis()
+        } else if (holding) {
+            // 等播放器跟上来, 锚点保持不动
         } else {
             /*
              * 追漂移要平滑, 不能一有差距就硬拽。
@@ -180,15 +240,27 @@ class LyricsView @JvmOverloads constructor(
                 }
             }
         }
-        // 锚点可能刚动过, 换成新时钟再判行
-        val index = doc.indexAt(nowMs())
-        if (index != currentIndex) currentIndex = index
+        // 锚点可能刚动过, 换成新时钟再判行; 点按过渡期间不判,
+        // 否则 seek 一落地 currentIndex 就先跳过去, 动画的落点会和画面对不上
+        if (!tapAnimating && !holding) {
+            val index = doc.indexAt(nowMs())
+            if (index != currentIndex) {
+                com.portable.qqmusic.core.Diag.i(
+                    "LyricsView",
+                    "syncTo pos=" + positionMs + " now=" + nowMs() + " index=" + index +
+                        " prev=" + currentIndex + " display=" + (manualAnchor ?: smooth) +
+                        " anchor=" + anchorMs + " playing=" + playing
+                )
+                currentIndex = index
+            }
+        }
         if (!smooth) {
             // 硬定位: 画面直接落到当前行, 不留过渡(拖动进度条时过渡反而像卡住)
+            tapAnimating = false
             this.smooth = currentIndex.toFloat()
             springVelocity = 0f
             manualAnchor = null
-        } else if (manualAnchor == null && abs(this.smooth - currentIndex) > 0.001f) {
+        } else if (!tapAnimating && manualAnchor == null && abs(this.smooth - currentIndex) > 0.001f) {
             ensureAnimating()
         }
         scheduleLineWake()
@@ -228,6 +300,9 @@ class LyricsView @JvmOverloads constructor(
      * 不再受外部 tick 频率影响 —— 时间点一到就换行, 进度自然从 0 开始扫。
      */
     private fun advanceLineIfNeeded() {
+        // 点歌词的过渡里不让时间轴接管: 否则 seek 一落地 currentIndex 就跳过去,
+        // 画面等于先被拽到目标行、再被动画拉回起点重走一遍
+        if (tapAnimating) return
         if (rows.isEmpty()) return
         val index = doc.indexAt(nowMs())
         if (index == currentIndex) return
@@ -271,7 +346,7 @@ class LyricsView @JvmOverloads constructor(
             frameScheduled = false
             // 扫色帧里也顺手判一次行: 换行瞬间就能把弹簧和扫色都推起来
             advanceLineIfNeeded()
-            if (!animating && !lineStillSweeping()) return
+            if (!animating && !tapAnimating && !lineStillSweeping()) return
             val frameMs = frameTimeNanos / 1_000_000L
             if (frameMs - lastSweepUptime >= SWEEP_FRAME_MS) {
                 lastSweepUptime = frameMs
@@ -393,8 +468,9 @@ class LyricsView @JvmOverloads constructor(
         }
 
         resumeIfIdle()
-        // 行号先跟上时钟再画: 换行不能等外部 tick, 否则新行前半句会一次性补色
-        advanceLineIfNeeded()
+        // 点歌词的过渡期间画面归动画管: 这时候按锚点判行会把 currentIndex 抢过去,
+        // 落点就跟点击的那一行对不上
+        if (!tapAnimating) advanceLineIfNeeded()
         advanceSpring()
 
         // 手动翻的时候画面跟着手指走, 行号仍然是自动跟唱的那一行
@@ -405,6 +481,10 @@ class LyricsView @JvmOverloads constructor(
         val colorActive = paletteActive
             ?: ContextCompat.getColor(context, R.color.white)
 
+        // 落位后的压暗淡入: 从「普通行亮度」滑到「当前行压暗」, 避免一帧砸暗
+        val landT = if (landFading) ((now - landFadeAt) / LAND_FADE_MS).coerceIn(0f, 1f) else 1f
+        if (landFading && landT >= 1f) landFading = false
+
         val base = (display.roundToInt()).coerceIn(0, rows.size - 1)
         val first = (base - VISIBLE_ROWS).coerceAtLeast(0)
         val last = (base + VISIBLE_ROWS).coerceAtMost(rows.size - 1)
@@ -414,9 +494,25 @@ class LyricsView @JvmOverloads constructor(
             val offset = i - display
             // 再远的两行 alpha 只剩十几, 本来就看不清, 干脆不画 —— 省两成绘制成本
             if (abs(offset) > FADE_OUT_ROWS) continue
-            val isActive = i == currentIndex || abs(offset) < ACTIVE_WINDOW
+            // 过渡途中就点亮目标行: 扫色从点击那一刻开始累积, 不用等落位。
+            // 途经的行仍然不亮(它们不是 activeIndex)。
+            val activeIndex = if (tapAnimating) tapAnimTo.roundToInt() else currentIndex
+            val isActive = i == activeIndex || (!tapAnimating && abs(offset) < ACTIVE_WINDOW)
             val row = rows[i]
-            applyTone(offset)
+            // 点歌词的过渡里, 明暗按「终点槽位」算: 途经的行路过中央时不会忽然被聚焦一下
+            // 明暗按终点槽位算(途经的行不会闪一下);
+            // 字号在手动过渡里: 目标行从「点击时的大小」线性长到 1, 其余行冻结在点击那一刻
+            // 明暗按终点槽位算(途经的行不会闪), 字号按行当前所在位置线性缩放
+            applyTone(if (tapAnimating) i - tapAnimTo else offset, offset)
+            // 点选过渡里, 非选中行滑进中央那条窄带时暂停缩放(记住进入时的大小),
+            // 离开窄带后再按位置恢复。手动滚动时不走这段逻辑。
+            if (tapAnimating && i != activeIndex) {
+                if (abs(offset) < BAND_ROWS) {
+                    toneScale = bandFrozen.getOrPut(i) { toneScale }
+                } else {
+                    bandFrozen.remove(i)
+                }
+            }
             val cy = rowCenterY(i, display)
             val top = cy - row.height / 2f
 
@@ -426,8 +522,10 @@ class LyricsView @JvmOverloads constructor(
             canvas.translate(paddingLeft.toFloat(), top + row.height / 2f - row.layout.height / 2f)
 
             val alpha = (toneAlpha * 255f).toInt().coerceIn(0, 255)
-            // 当前行的「未唱」部分压得很暗, 已唱部分才是满亮度
-            val unsungAlpha = if (isActive) (alpha * DIM_UNSUNG).toInt().coerceIn(0, 255) else alpha
+            // 当前行的「未唱」部分压得很暗, 已唱部分才是满亮度;
+            // 刚落位时用 180ms 从普通行亮度过渡过去
+            val dim = DIM_UNSUNG + (1f - DIM_UNSUNG) * (1f - landT)
+            val unsungAlpha = if (isActive) (alpha * dim).toInt().coerceIn(0, 255) else alpha
 
             textPaint.color = withAlpha(colorNormal, unsungAlpha)
             // 折行的歌词按行居中, 但 StaticLayout 的宽度是整块 —— draw 时以块中心对齐
@@ -569,12 +667,16 @@ class LyricsView @JvmOverloads constructor(
     private fun advanceSpring() {
         // 手在翻的时候弹簧让位, 松手后从当前位置继续弹回当前行
         if (manualAnchor != null) return
-        val target = currentIndex.toFloat()
+        val now = SystemClock.uptimeMillis()
+        if (tapAnimating) {
+            advanceTapAnim(now)
+            return
+        }
+        val target = springTarget()
         if (!animating) {
             smooth = target
             return
         }
-        val now = SystemClock.uptimeMillis()
         val dt = ((now - lastFrameUptime).coerceIn(0L, 50L)).toFloat() / 1000f
         lastFrameUptime = now
 
@@ -602,6 +704,81 @@ class LyricsView @JvmOverloads constructor(
     }
 
 
+    /**
+     * 换行时弹簧的目标位置。
+     *
+     * 直接拿 currentIndex 当目标的话, 动画要等这一行真的开始唱才启动 —— 于是
+     * 新句的扫色已经亮起来, 画面还在往下挪(临界阻尼弹簧头 100ms 只走两成)。
+     * 这里在下一句开始前 [LINE_LEAD_MS] 就把目标往下一行推, 让滚动先于扫色到位。
+     */
+    private fun springTarget(): Float {
+        val base = currentIndex.toFloat()
+        if (!playing) return base
+        val next = rows.getOrNull(currentIndex + 1) ?: return base
+        val remain = (next.timeMs - nowMs()).toFloat()
+        if (remain <= 0f || remain >= LINE_LEAD_MS) return base
+        return base + (1f - remain / LINE_LEAD_MS)
+    }
+
+    /** 点歌词后那段过渡: 和自动换行同一套弹簧, 只是途中不点亮不扫色 */
+    private fun advanceTapAnim(now: Long) {
+        val dt = ((now - lastFrameUptime).coerceIn(0L, 50L)).toFloat() / 1000f
+        lastFrameUptime = now
+        if (dt > 0f) {
+            val accel = (-TAP_STIFFNESS * (smooth - tapAnimTo) - TAP_DAMPING * springVelocity) / SPRING_MASS
+            springVelocity += accel * dt
+            smooth += springVelocity * dt
+        }
+        val settled = abs(smooth - tapAnimTo) < 0.0015f && abs(springVelocity) < 0.0015f
+        if (!settled) {
+            postInvalidateOnAnimation()
+            return
+        }
+        smooth = tapAnimTo
+        springVelocity = 0f
+        tapAnimating = false
+        bandFrozen.clear()
+        landTapAnim()
+    }
+
+    /**
+     * 过渡落地: 行号和扫色时钟一起对齐到目标行。
+     *
+     * 扫色锚点用「点击时的时间 + 已经过去的时间」推算, 而不是行首时间 ——
+     * 否则落位瞬间扫色会退回 0, 半拍后又被 tick 拽回来。
+     */
+    private fun landTapAnim() {
+        if (rows.isEmpty()) return
+        val idx = tapAnimTo.roundToInt().coerceIn(0, rows.size - 1)
+        currentIndex = idx
+        anchorMs = tapSeekMs + (SystemClock.uptimeMillis() - tapSeekUptime).toInt()
+        anchorUptime = SystemClock.uptimeMillis()
+        seekHoldMs = tapSeekMs
+        seekHoldUntil = SystemClock.uptimeMillis() + SEEK_HOLD_MS
+        animating = true
+        lastFrameUptime = SystemClock.uptimeMillis()
+        if (lineStillSweeping()) scheduleSweep() else postInvalidateOnAnimation()
+    }
+
+    private fun startTapAnim(from: Float, to: Float) {
+        smooth = from
+        tapAnimFrom = from
+        tapAnimTo = to
+        springVelocity = 0f
+        if (abs(to - from) < 0.001f) {
+            tapAnimating = false
+            smooth = to
+            landTapAnim()
+            return
+        }
+        tapAnimating = true
+        bandFrozen.clear()
+        landFadeAt = SystemClock.uptimeMillis()
+        landFading = true
+        ensureAnimating()
+        postInvalidateOnAnimation()
+    }
+
     private fun activeRowTop(): Float? {
         if (rows.isEmpty()) return null
         val index = currentIndex.coerceIn(0, rows.size - 1)
@@ -626,8 +803,8 @@ class LyricsView @JvmOverloads constructor(
             advanceFling()
             return
         }
-        // 从手停下的位置起弹, 而不是直接跳到当前行
-        smooth = manual
+        // 从手停下位置最近的整行起步: 交还自动跟随后不会留一个半行的偏移
+        smooth = round(manual)
         springVelocity = 0f
         manualAnchor = null
         flingVelocity = 0f
@@ -674,16 +851,22 @@ class LyricsView @JvmOverloads constructor(
      *
      * 结果写进 [toneAlpha] / [toneScale] 两个字段，不在帧循环里 new 对象。
      */
-    private fun applyTone(offset: Float) {
-        val distance = abs(offset)
+    private fun applyTone(alphaOffset: Float, scaleOffset: Float = alphaOffset) {
+        // 字号跟着位移线性放大: 越靠近中央越大(自动换行时就是这个手感)
+        val sd = abs(scaleOffset)
+        toneScale = if (sd <= 1f) {
+            1f - (1f - TONE_MIN_SCALE) * sd
+        } else {
+            max(0.62f, TONE_MIN_SCALE - 0.04f * (sd - 1f))
+        }
+
+        val distance = abs(alphaOffset)
         if (distance < ACTIVE_WINDOW) {
             toneAlpha = 1f
-            toneScale = 1f
             return
         }
         val d = max(distance, 1f)
-        toneScale = max(0.66f, 0.70f * 0.9f.pow(d - 1f))
-        toneAlpha = if (offset > 0f) {
+        toneAlpha = if (alphaOffset > 0f) {
             max(0.24f, 0.50f - (d - 1f) * 0.13f)
         } else {
             max(0.16f, 0.34f - (d - 1f) * 0.09f)
@@ -808,10 +991,23 @@ class LyricsView @JvmOverloads constructor(
         if (x < paddingLeft || x > width - paddingRight) return
         val display = manualAnchor ?: smooth
         val centerY = (height / 2).toFloat()
-        val index = display.roundToInt() + ((y - centerY) / stepAt(display)).roundToInt()
+        val step = stepAt(display).coerceAtLeast(1f)
+        val rowsFromCenter = (y - centerY) / step
+        val index = display.roundToInt() + rowsFromCenter.roundToInt()
         val row = rows.getOrNull(index) ?: return
+        // 起点就是画面此刻的连续位置: 被点中的那一行从它现在所在的地方滑向中央,
+        // 全程只在当前页面内移动, 跟播放进度无关(seek 已经在下面发出去了)
+        val from = display.coerceIn(0f, (rows.size - 1).toFloat())
         manualAnchor = null
         flingVelocity = 0f
+        com.portable.qqmusic.core.Diag.i(
+            "LyricsView",
+            "点歌词 y=$y display=$display step=$step rowsFromCenter=$rowsFromCenter index=$index from=$from target=${row.timeMs}"
+        )
+        startTapAnim(from, index.toFloat())
+        tapSeekMs = row.timeMs
+        tapSeekUptime = SystemClock.uptimeMillis()
+        seekGraceUntil = SystemClock.uptimeMillis() + SEEK_GRACE_MS
         onSeek?.invoke(row.timeMs)
     }
 
@@ -833,6 +1029,19 @@ class LyricsView @JvmOverloads constructor(
     )
 
     private companion object {
+
+        /** 下一句开始前多久就把滚动目标推过去 (毫秒) */
+        private const val LINE_LEAD_MS = 240f
+
+        /** 点歌词跳转后, 等多长时间让播放器把位置真正跟上来 */
+        private const val SEEK_HOLD_MS = 2_500L
+
+        /** 播放器报的位置与目标差在这个范围内就算已经到位 */
+        private const val SEEK_HOLD_TOLERANCE_MS = 1_200
+
+        /** 落位后「当前行压暗」的淡入时长 */
+        private const val LAND_FADE_MS = 180f
+
         /**
          * 当前行上下各画这么多行。
          *
@@ -867,7 +1076,7 @@ class LyricsView @JvmOverloads constructor(
         const val SWEEP_FRAME_MS = 16L
 
         /** 手动翻之后静置多久交还自动跟随 */
-        const val MANUAL_IDLE_MS = 3000L
+        const val MANUAL_IDLE_MS = 1200L
 
         /**
          * onProgress 报来的位置和本地推算差多少才**硬对齐**。
@@ -887,6 +1096,22 @@ class LyricsView @JvmOverloads constructor(
         private const val DRIFT_SOFT_MS = 25
 
         // folia 的 MONET_SCROLL_SPRING
+        /**
+         * 点歌词过渡单独用一组更软的弹簧: 自动换行要跟得上节拍(硬一点),
+         * 手动点选是"看着它飘过去", 需要更慢更缓的收束。
+         */
+        const val TAP_STIFFNESS = 90f
+        const val TAP_DAMPING = 19f
+
+        /** 离中央一整行时的字号比例(再远就继续缓慢缩小) */
+        const val TONE_MIN_SCALE = 0.70f
+
+        /** 中央窄带半径(单位: 行) —— 手动过渡时经过这里不缩放字号 */
+        const val BAND_ROWS = 0.5f
+
+        /** 点歌词 seek 后忽略 paused 的时长 */
+        const val SEEK_GRACE_MS = 3_000L
+
         const val SPRING_STIFFNESS = 142f
         const val SPRING_DAMPING = 28f
         const val SPRING_MASS = 0.82f

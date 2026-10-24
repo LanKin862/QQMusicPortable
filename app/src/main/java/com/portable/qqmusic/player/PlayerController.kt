@@ -627,6 +627,7 @@ object PlayerController {
                 actualQualityMid = song.mid
                 // 记下来: 输出徽章要拿这个文件名去读源采样率, 歌词扫色也要靠它找完整缓存
                 lastCacheName = resolved.fileName
+                Store.putStr(Store.K.LAST_CACHE_NAME, resolved.fileName)
                 lastCacheMid = song.mid
                 /*
                  * 音质角标和输出徽章的「源采样率 / 直通·重采样」都依赖上面几个字段,

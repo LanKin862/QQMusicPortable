@@ -116,6 +116,8 @@ object MusicU {
 
         val mods = HashMap<String, Mod>(4)
         collect(root, key, module, mods)
+        // 登录态失效时服务端会回 -10000(未登录) 或 1000(需要登录): 清凭证并提示重新登录
+        if (Login.isLoggedIn() && isSessionExpired(root, mods)) Login.onSessionExpired()
         return MusicUResponse(root, mods)
     }
 
@@ -145,12 +147,26 @@ object MusicU {
 
         val mods = HashMap<String, Mod>(items.size * 2)
         for (it in items) collect(root, it.key, it.module, mods)
+        if (Login.isLoggedIn() && isSessionExpired(root, mods)) Login.onSessionExpired()
         return MusicUResponse(root, mods)
     }
 
     const val DEFAULT_KEY = "req_0"
 
     data class RequestItem(val module: String, val method: String, val param: JSONObject, val key: String)
+
+    /**
+     * 这批响应是不是在说「登录失效」。
+     *
+     * 只用顶层 code / retcode 以及模块 code 里的 -10000 / 1000 判断 ——
+     * 业务接口自己的错误码(比如歌单的 10004 参数错误)不参与, 免得误清登录态。
+     */
+    private fun isSessionExpired(root: JSONObject, mods: Map<String, Mod>): Boolean {
+        val top = J.int(root, "code", 0)
+        val ret = J.int(root, "retcode", 0)
+        if (top == -10000 || top == 1000 || ret == -10000 || ret == 1000) return true
+        return mods.values.any { it.code == -10000 }
+    }
 
     /** 取出响应中与请求键同名的模块对象 */
     private fun collect(container: JSONObject?, key: String, module: String, out: MutableMap<String, Mod>) {

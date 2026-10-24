@@ -41,7 +41,7 @@ import com.portable.qqmusic.ui.util.Tip
  * 中部: 收藏 / 本地 两张卡片
  * 下部: 歌单列表, 用 Tab 区分「自建歌单」与「收藏歌单」
  */
-class MineFragment : Fragment() {
+class MineFragment : Fragment(), Login.SessionListener {
 
     private lateinit var playlistRecycler: RecyclerView
     private lateinit var tabs: TabLayout
@@ -75,6 +75,7 @@ class MineFragment : Fragment() {
         favoriteSub = view.findViewById(R.id.favorite_sub)
         localSub = view.findViewById(R.id.local_sub)
 
+        Login.addSessionListener(this)
         setupTopBar(view)
         setupCards(view)
         setupTabs()
@@ -328,6 +329,12 @@ class MineFragment : Fragment() {
 
     // ---------------- 数据 ----------------
 
+    /** 登录态在请求里被判失效: 账号卡片立刻回到未登录态 */
+    override fun onSessionExpired() {
+        if (!isAdded || !::accountName.isInitialized) return
+        refreshAccount()
+    }
+
     private fun refreshAccount() {
         val loggedIn = Login.isLoggedIn()
         accountName.text = if (loggedIn) Login.nick().ifEmpty { "QQ 音乐用户" } else getString(R.string.not_login)
@@ -491,6 +498,7 @@ class MineFragment : Fragment() {
 
     override fun onDestroyView() {
         Log.d("MineFragment", "onDestroyView")
+        Login.removeSessionListener(this)
         DownloadManager.removeListener(downloadListener)
         Store.removeListener(storeListener)
         super.onDestroyView()

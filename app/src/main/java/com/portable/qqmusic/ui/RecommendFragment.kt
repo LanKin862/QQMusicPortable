@@ -100,6 +100,11 @@ class RecommendFragment : Fragment(), PlayerController.Listener {
             if (guessSongs.isEmpty()) return@setOnClickListener
             playAll(guessSongs, 0, QueueKind.GUESS)
         }
+
+        // 「更多为你推荐」: 把货架 + 广场推荐流合并后的完整列表铺一整页
+        view.findViewById<TextView>(R.id.playlist_more).setOnClickListener {
+            startActivity(Intent(requireContext(), RecommendMoreActivity::class.java))
+        }
         guessRefresh.setOnClickListener { refreshGuess() }
 
         PlayerController.addListener(this)

@@ -258,6 +258,8 @@ object UserApi {
             val mod = resp.mod(MusicU.DEFAULT_KEY)
             val arr = mod.data?.optJSONArray("v_tids")
             Diag.i("UserApi", "收藏歌单 tid code=${mod.code} v_tids=${arr?.length() ?: 0}")
+            // 过期账号拿不到「收藏歌单」, 但收藏音乐/日推/自建歌单都正常 —— 用这个当过期信号
+            if (mod.code == 1000) Login.onSessionExpired()
             if (arr == null) return emptyList()
             val out = ArrayList<Long>(arr.length())
             for (i in 0 until arr.length()) {

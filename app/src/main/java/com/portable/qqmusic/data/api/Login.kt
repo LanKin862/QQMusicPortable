@@ -116,8 +116,9 @@ object Login {
         // 换账号: 上一个账号的歌单/收藏缓存不能留, 否则会先闪一下别人的数据
         val prevUin = Store.str(Store.K.UIN, "")
         if (prevUin.isNotEmpty() && prevUin != uin) {
-            com.portable.qqmusic.App.instance?.let { com.portable.qqmusic.data.MetaCache.clearAll(it) }
+            com.portable.qqmusic.App.instance?.let { com.portable.qqmusic.data.MetaCache.clearAccountData(it) }
         }
+        resetExpiredFlag()
         Store.putStr(Store.K.UIN, uin)
         Store.putStr(Store.K.COOKIE, cookie)
         Store.putLong(Store.K.LOGIN_TIME, System.currentTimeMillis())
@@ -145,6 +146,53 @@ object Login {
         }
     }
 
+    /** 登录态失效时的回调: 页面收到后刷新账号卡片 */
+    interface SessionListener {
+        fun onSessionExpired()
+    }
+
+    private val sessionListeners =
+        java.util.concurrent.CopyOnWriteArrayList<SessionListener>()
+
+    fun addSessionListener(l: SessionListener) {
+        if (!sessionListeners.contains(l)) sessionListeners.add(l)
+    }
+
+    fun removeSessionListener(l: SessionListener) {
+        sessionListeners.remove(l)
+    }
+
+    @Volatile
+    private var expiredNotified = false
+
+    /**
+     * 服务端说「你没登录」: 清掉本地凭证并提示重新登录。
+     *
+     * 只处理确实有登录态的情况 —— 未登录时的 1000 不能反复弹提示。
+     */
+    fun onSessionExpired() {
+        if (!isLoggedIn()) return
+        val app = com.portable.qqmusic.App.instance ?: return
+        if (expiredNotified) return
+        expiredNotified = true
+        logout()
+        Http.setCookies("")
+        com.portable.qqmusic.core.Task.main {
+            android.widget.Toast.makeText(
+                app,
+                app.getString(com.portable.qqmusic.R.string.login_expired),
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+        sessionListeners.forEach { runCatching { it.onSessionExpired() } }
+        Log.w("Login", "session expired, credentials cleared")
+    }
+
+    /** 重新登录成功后允许再次提示 */
+    fun resetExpiredFlag() {
+        expiredNotified = false
+    }
+
     fun logout() {
         Store.remove(Store.K.COOKIE)
         Store.remove(Store.K.UIN)
@@ -152,8 +200,8 @@ object Login {
         Store.remove(Store.K.AVATAR)
         Store.remove(Store.K.VIP)
         Http.setCookies("")
-        // 退出后不能再把上一个账号的歌单摆在界面上
-        com.portable.qqmusic.App.instance?.let { com.portable.qqmusic.data.MetaCache.clearAll(it) }
+        // 退出后不能再把上一个账号的歌单摆在界面上(本地曲目匹配结果留着)
+        com.portable.qqmusic.App.instance?.let { com.portable.qqmusic.data.MetaCache.clearAccountData(it) }
     }
 
 
@@ -176,6 +224,12 @@ object Login {
         )
         Diag.i("Login", "GetLoginUserInfo 原始响应(前 400)=[${raw.take(400)}]")
 
+        // 过期账号的特征: 会员信息 / 歌单收藏拉不到(code 1000), 但收藏音乐、日推、自建歌单照常
+        if (resp.mod("profile").code == 1000) {
+            Diag.i("Login", "GetLoginUserInfo code=1000, 判定登录已过期")
+            onSessionExpired()
+            return null
+        }
         val profile = UserProfile.fromJson(resp.data("profile"))
         if (profile != null) {
             Store.putStr(Store.K.NICK, profile.nick)

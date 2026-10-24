@@ -266,10 +266,10 @@ object CacheManager {
     private const val MIN_PREBUFFER_BYTES = 192L * 1024
     private const val MAX_PREBUFFER_BYTES = 1L * 1024 * 1024
 
-    /** 当前缓存占用 (字节) */
+    /** 刷新「歌单 + 封面 + 歌词」的已用量 (设置页展示用) */
     fun refreshUsage(context: Context) {
         Task.io {
-            val mb = (usedBytes(context) / 1024 / 1024).toInt()
+            val mb = (dataUsedBytes(context) / 1024 / 1024).toInt()
             Settings.setCacheUsedMb(mb)
         }
     }
@@ -277,63 +277,34 @@ object CacheManager {
     /**
      * 按上限清理缓存。
      *
-     * 顺序: 先歌曲缓存, 再封面, 最后歌单数据; 每层内部**按最后修改时间从旧到新**删。
-     * 这样最有价值、最难重新获取的数据会被留到最后。
+     * 现在的口径只有一条: 「歌单数据 + 封面 + 歌词」三者之和不超过设置里的缓存上限。
+     * 歌曲缓存不参与 —— 它在启动时就被 [pruneAudio] 清掉了。
+     *
+     * 腾空间顺序固定为 封面 → 歌单 → 歌词: 封面最容易重新下载, 歌词次之,
+     * 歌单数据重新拉取代价最高。每层内部按最后修改时间从旧到新删。
      */
     fun enforceLimit(context: Context) {
+        val limitMb = Settings.cacheDataMb()
+        if (limitMb <= 0) return
+        val limitBytes = limitMb.toLong() * 1024 * 1024
         val tiers = tierFiles(context)
         val now = System.currentTimeMillis()
         val freed = LinkedHashMap<Tier, Long>()
 
-        fun oldestFirst(tier: Tier): List<File> =
-            (tiers[tier] ?: emptyList()).sortedBy { it.lastModified() }
+        var total = DATA_TIERS.sumOf { tier -> (tiers[tier] ?: emptyList()).sumOf { it.length() } }
+        if (total <= limitBytes) return
 
-        /**
-         * 删到 [tier] 的占用不超过 [quotaBytes]; 返回实际腾出的字节数。
-         *
-         * 单个文件按**最后修改时间从旧到新**删: 越久没碰过的越可能再也用不上。
-         */
-        fun trim(tier: Tier, quotaBytes: Long): Long {
-            if (quotaBytes <= 0) return 0L   // <=0 表示这一层不限
-            val files = oldestFirst(tier)
-            var used = files.sumOf { it.length() }
-            var got = 0L
+        for (tier in DATA_TIERS) {
+            if (total <= limitBytes) break
+            val files = (tiers[tier] ?: emptyList()).sortedBy { it.lastModified() }
             for (f in files) {
-                if (used <= quotaBytes) break
-                // 刚被写过的文件还在被播放器读 (边下边播的 stream/ 暂存文件),
-                // 删掉会让正在播的这首歌当场断流, 所以留一个使用窗口。
+                if (total <= limitBytes) break
+                // 刚写过的文件可能还在被读 (比如正在显示的封面), 留一个使用窗口
                 if (now - f.lastModified() < IN_USE_WINDOW_MS) continue
                 val len = f.length()
                 if (f.delete()) {
-                    used -= len
-                    got += len
-                }
-            }
-            return got
-        }
-
-        // 第一轮: 各层自己的配额。译文和歌单重新拉取代价最高, 所以它们只受自己配额约束,
-        // 不会被歌曲缓存把总量吃满而连带清掉。
-        for (tier in listOf(Tier.IMAGE, Tier.META, Tier.LYRIC)) {
-            val got = trim(tier, quotaBytes(tier))
-            if (got > 0) freed[tier] = (freed[tier] ?: 0L) + got
-        }
-
-        // 第二轮: 总量超上限时按优先级清 —— 歌曲缓存最先, 其次封面, 歌单与译文最后。
-        val limitMb = Settings.cacheLimitMb()
-        if (limitMb > 0) {
-            val limitBytes = limitMb.toLong() * 1024 * 1024
-            var total = tiers.values.sumOf { files -> files.sumOf { it.length() } }
-            for (tier in Tier.entries) {
-                if (total <= limitBytes) break
-                for (f in oldestFirst(tier)) {
-                    if (total <= limitBytes) break
-                    if (now - f.lastModified() < IN_USE_WINDOW_MS) continue
-                    val len = f.length()
-                    if (f.delete()) {
-                        total -= len
-                        freed[tier] = (freed[tier] ?: 0L) + len
-                    }
+                    total -= len
+                    freed[tier] = (freed[tier] ?: 0L) + len
                 }
             }
         }
@@ -341,23 +312,54 @@ object CacheManager {
         if (freed.isNotEmpty()) {
             Diag.i(
                 "CacheManager",
-                "缓存清理 limit=${Settings.cacheLimitMb()}MB " +
+                "缓存清理 limit=${limitMb}MB " +
                     freed.entries.joinToString(" ") { "${it.key.label}=${it.value / 1024 / 1024}MB" }
             )
         }
     }
 
     /**
-     * 某一层的配额 (字节); 0 表示不限。
+     * 启动时清理歌曲缓存, 只保留 [keepName] 这一个文件。
      *
-     * 歌曲缓存不单独封顶 —— 它是「最先被牺牲」的那一层, 只吃总量扣掉其他层之后的剩余空间。
+     * 音频缓存的价值只在「当次播放」: 关掉应用再打开, 上次那几百 MB 基本不会再被读,
+     * 留着只是白占空间。这里连 stream/ 暂存目录一起清, 避免崩溃退出留下的半截文件。
      */
-    private fun quotaBytes(tier: Tier): Long = when (tier) {
-        Tier.IMAGE -> Settings.cacheImageMb()
-        Tier.META -> Settings.cacheMetaMb()
-        Tier.LYRIC -> Settings.cacheLyricMb()
-        Tier.AUDIO -> 0
-    }.toLong() * 1024 * 1024
+    fun pruneAudio(context: Context, keepName: String?) {
+        Task.io {
+            var removed = 0L
+            var kept = 0
+            val dirs = listOf(File(Storage.audioDir(context), "stream"), Storage.audioDir(context))
+            for (dir in dirs) {
+                dir.listFiles()?.forEach { f ->
+                    if (!f.isFile) return@forEach
+                    if (keepName != null && f.name == keepName) {
+                        kept++
+                        return@forEach
+                    }
+                    val len = f.length()
+                    if (f.delete()) removed += len
+                }
+            }
+            Diag.i(
+                "CacheManager",
+                "启动清理歌曲缓存: 删除 ${removed / 1024 / 1024}MB, 保留 $kept 个 (${keepName ?: "无"})"
+            )
+            refreshUsage(context)
+        }
+    }
+
+    /** 参与「缓存上限」统计的三层 */
+    private val DATA_TIERS = listOf(Tier.IMAGE, Tier.META, Tier.LYRIC)
+
+    /** 这三层当前占用 (字节) */
+    fun dataUsedBytes(context: Context): Long {
+        val tiers = tierFiles(context)
+        return DATA_TIERS.sumOf { tier -> (tiers[tier] ?: emptyList()).sumOf { it.length() } }
+    }
+
+    /** 音频缓存当前占用 (字节), 只用于展示 */
+    fun audioUsedBytes(context: Context): Long =
+        (tierFiles(context)[Tier.AUDIO] ?: emptyList()).sumOf { it.length() }
 
     /** 判定「正在使用中」的时间窗: 边下边播的文件每次写入都会刷新 mtime */
     private const val IN_USE_WINDOW_MS = 5 * 60 * 1000L

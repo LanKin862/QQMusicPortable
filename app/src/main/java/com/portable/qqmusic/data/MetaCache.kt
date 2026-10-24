@@ -126,6 +126,25 @@ object MetaCache {
         }
     }
 
+    /**
+     * 换账号 / 退出登录时的清理: 只删「跟账号绑定」的缓存。
+     *
+     * 本地曲目匹配结果 (`local_meta_`) 是按文件名+歌手搜出来的, 跟当前登录的是谁无关 ——
+     * 一起清掉的话, 用户重新登录后本地歌的封面和歌词会全部退回占位图, 得重新匹配一遍。
+     */
+    fun clearAccountData(context: Context) {
+        try {
+            Storage.metaDir(context).listFiles()?.forEach {
+                if (it.isFile && !it.name.startsWith(LOCAL_META_PREFIX)) it.delete()
+            }
+        } catch (t: Throwable) {
+            Log.w("MetaCache.clearAccountData", t)
+        }
+    }
+
+    /** 本地曲目匹配结果的前缀, 与 LocalMeta.PREFIX 保持一致 */
+    private const val LOCAL_META_PREFIX = "local_meta"
+
     /** 登录状态变化时清空: 换了账号, 上一个账号的歌单不能留在界面上 */
     fun clearAll(context: Context) {
         try {

@@ -112,4 +112,10 @@
         <item name="android:paddingStart">16dp</item>
         <item name="android:paddingEnd">16dp</item>
     </style>
+    <!-- 稍小的顶栏标题 (默认 MaterialToolbar 是 20sp) -->
+    <style name="TextAppearance.ToolbarSmall" parent="TextAppearance.MaterialComponents.Subtitle1">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
 </resources>

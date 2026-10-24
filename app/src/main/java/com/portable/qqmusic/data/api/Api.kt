@@ -265,7 +265,10 @@ object DiscoverApi {
             val resp = MusicU.call(
                 "music.recommend.RecommendFeed", "get_recommend_feed", JSONObject()
             )
-            val shelves = resp.data(MusicU.DEFAULT_KEY)?.optJSONArray("v_shelf") ?: return 0L
+            val feedData = resp.data(MusicU.DEFAULT_KEY)
+            // 每个进程只打一次, 免得每次刷新都往 boot.log 里灌一遍货架结构
+            if (feedData != null && feedLogged.compareAndSet(false, true)) dumpFeedStructure(feedData)
+            val shelves = feedData?.optJSONArray("v_shelf") ?: return 0L
             for (i in 0 until shelves.length()) {
                 val niches = shelves.optJSONObject(i)?.optJSONArray("v_niche") ?: continue
                 for (j in 0 until niches.length()) {
@@ -288,6 +291,42 @@ object DiscoverApi {
         } catch (t: Throwable) {
             Diag.e("Discover", "解析「每日30首」卡片失败", t)
             0L
+        }
+    }
+
+    private val feedLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 一次性诊断: 把推荐货架的结构打进日志, 看清 RecommendFeed 到底给了哪些栏目 */
+    private fun dumpFeedStructure(data: org.json.JSONObject) {
+        try {
+            val top = data.keys().asSequence().toList().joinToString(",")
+            Diag.i("Discover", "RecommendFeed 顶层键=[$top]")
+            val shelves = data.optJSONArray("v_shelf") ?: return
+            for (i in 0 until shelves.length()) {
+                val shelf = shelves.optJSONObject(i) ?: continue
+                val niches = shelf.optJSONArray("v_niche") ?: continue
+                Diag.i(
+                    "Discover",
+                    "货架[$i] title=${shelf.optString("title")} type=${shelf.optString("type")} niche=${niches.length()}"
+                )
+                for (j in 0 until niches.length()) {
+                    val niche = niches.optJSONObject(j) ?: continue
+                    val cards = niche.optJSONArray("v_card") ?: continue
+                    Diag.i(
+                        "Discover",
+                        "  栏目[$j] title=${niche.optString("title")} type=${niche.optString("type")} card=${cards.length()}"
+                    )
+                    for (k in 0 until minOf(cards.length(), 4)) {
+                        val card = cards.optJSONObject(k) ?: continue
+                        Diag.i(
+                            "Discover",
+                            "    卡片[$k] title=${card.optString("title")} type=${card.optString("type")} id=${card.optString("id")} sub=${card.optString("subtitle")}"
+                        )
+                    }
+                }
+            }
+        } catch (t: Throwable) {
+            Diag.e("Discover", "dumpFeedStructure 失败", t)
         }
     }
 
@@ -403,15 +442,181 @@ object DiscoverApi {
     }
 
     /**
-     * 推荐歌单: legacy 歌单广场接口。
+     * 推荐歌单。
      *
-     * 实测 (未登录也返回数据):
-     * `c.y.qq.com/splcloud/fcgi-bin/fcg_get_diss_by_tag.fcg` → `data.list[]`
+     * 主路径走 QQ 音乐自己的「歌单广场推荐流」——和 Folia 的 `/recommend/playlists`
+     * 同一条上游 (qq-music-api 的 `recommendPlaylists.js`):
      *
-     * 早期使用的 `music.srfDissInfo.DissInfo{id,num,page,order}` 会返回
-     * `param error` (code -100008), 导致推荐歌单永远为空。
+     * ```
+     * module: music.playlist.PlaylistSquare
+     * method: GetRecommendFeed
+     * param : { "From": 0, "Size": limit }        // 一次最多 60 张
+     * ```
+     *
+     * 响应在 `data.List[].Playlist.basic`: `tid` / `title` / `desc` / `song_cnt` /
+     * `play_cnt` / `cover.{default_url,big_url,medium_url,small_url}` / `creator.nick`。
+     * 登录态下是个性化推荐, 匿名也能拿到一批公共歌单。`tid` 就是 legacy 详情接口认的
+     * `disstid`, 所以两个字段都填它, 点进去能正常取歌。
+     *
+     * 拿不到 (旧包/接口变更/网络抖动) 时退回 legacy 歌单广场 `fcg_get_diss_by_tag.fcg`,
+     * 那条不认登录、按 sortId=5 给热门歌单, 至少不会让推荐页空着。
      */
     fun recommendPlaylists(limit: Int = 12): List<Playlist> {
+        val size = limit.coerceIn(1, MAX_RECOMMEND_PLAYLISTS)
+        // 一档: 推荐货架 (`RecommendFeed`) 里按口味给的歌单卡 —— 最贴个人
+        val shelf = shelfPlaylists(size)
+        if (shelf.size >= size) return shelf
+        // 二档: 歌单广场推荐流, 只用来把货架没给满的坑补上 (偏好不如货架, 所以排后面)
+        val feed = playlistSquareFeed(size)
+        if (feed.isNotEmpty()) {
+            val seen = shelf.map { it.id }.toHashSet()
+            val merged = ArrayList<Playlist>(size)
+            merged.addAll(shelf)
+            for (p in feed) {
+                if (merged.size >= size) break
+                if (seen.add(p.id)) merged.add(p)
+            }
+            if (merged.isNotEmpty()) {
+                Diag.i("Discover", "推荐歌单合并: 货架 ${shelf.size} + 广场 ${merged.size - shelf.size}")
+                return merged
+            }
+        }
+        if (shelf.isNotEmpty()) return shelf
+        // 三档: legacy 歌单广场 —— 纯热门, 保证不空
+        Diag.i("Discover", "推荐歌单改走 legacy 歌单广场")
+        return squareByTag(size)
+    }
+
+    /**
+     * 从 `RecommendFeed` 的货架里取歌单卡。
+     *
+     * 实测 (2026-10, 已登录) 的 `v_shelf` 结构: 第 0 个货架里有「每日30首」、一个无标题卡、
+     * 「一周听歌排行」「9月听歌排行」; 第 1 个是「更多为你推荐」入口; 后面每个货架只有一张
+     * 歌单卡 —— 那些才是按口味挑的 (复古蒸汽波 / 日本男团 / 另类独立 …)。
+     *
+     * 歌单卡的字段: `id`(disstid, 字符串) / `title` / `cover`(已经是完整 URL) /
+     * `cnt`(播放量) / `miscellany.cnt_content` / `miscellany.fav_cnt`, 类型 `type=500`。
+     * `type=800` 是听歌排行, `-1` 是「更多」入口, 都跳过。
+     */
+    /**
+     * 推荐货架里「按口味挑的推荐歌单」(type=500 的卡片)。
+     *
+     * 与 [recommendPlaylists] 的区别: 那个是三档合并的结果 (货架 → 广场 → 标签),
+     * 这个只取货架, 用于推荐页单独的「为你推荐」一行 —— 两行内容不重复。
+     */
+    fun shelfPlaylists(limit: Int = 12): List<Playlist> {
+        return try {
+            val resp = MusicU.call("music.recommend.RecommendFeed", "get_recommend_feed", JSONObject())
+            val data = resp.data(MusicU.DEFAULT_KEY) ?: return emptyList()
+            val shelves = data.optJSONArray("v_shelf") ?: return emptyList()
+            val out = ArrayList<Playlist>(limit)
+            val seen = HashSet<String>(limit)
+            for (i in 0 until shelves.length()) {
+                val niches = shelves.optJSONObject(i)?.optJSONArray("v_niche") ?: continue
+                for (j in 0 until niches.length()) {
+                    val cards = niches.optJSONObject(j)?.optJSONArray("v_card") ?: continue
+                    for (k in 0 until cards.length()) {
+                        val card = cards.optJSONObject(k) ?: continue
+                        if (card.optString("type") != "500") continue
+                        val title = card.optString("title").trim()
+                        // 「每日30首」也是 type=500, 但那是日推不是歌单; 无标题卡是占位
+                        if (title.isEmpty() || title.contains("每日30首")) continue
+                        val id = card.optString("id").trim()
+                        if (id.isEmpty() || !seen.add(id)) continue
+                        val disstid = id.toLongOrNull() ?: continue
+                        val misc = J.obj(card, "miscellany")
+                        out.add(
+                            Playlist(
+                                id = disstid,
+                                disstid = id,
+                                title = title,
+                                cover = card.optString("cover", ""),
+                                playCount = card.optLong("cnt", 0L),
+                                desc = misc?.optString("rcmd_reason", "").orEmpty(),
+                                creator = misc?.optString("rcmdcontent", "").orEmpty(),
+                                type = Playlist.TYPE_PLAYLIST
+                            )
+                        )
+                        if (out.size >= limit) {
+                            Diag.i("Discover", "推荐歌单(货架) ${out.size} 个")
+                            return out
+                        }
+                    }
+                }
+            }
+            Diag.i("Discover", "推荐歌单(货架) ${out.size} 个")
+            out
+        } catch (t: Throwable) {
+            Diag.e("Discover", "推荐货架取歌单失败, 将退回广场推荐流", t)
+            emptyList()
+        }
+    }
+
+    fun playlistSquareFeed(limit: Int): List<Playlist> {
+        // 桌面端 (19/1845) 优先; 有些账号/地区只有移动端协议放行, 再试一次 (24/0)
+        val protocols = arrayOf(intArrayOf(19, 1845), intArrayOf(24, 0))
+        for ((index, proto) in protocols.withIndex()) {
+            val out = playlistSquareFeedOnce(limit, proto[0], proto[1])
+            if (out.isNotEmpty()) return out
+            if (index == 0) Diag.i("Discover", "广场推荐流用桌面协议没拿到, 换移动协议再试")
+        }
+        return emptyList()
+    }
+
+    private fun playlistSquareFeedOnce(limit: Int, ct: Int, cv: Int): List<Playlist> {
+        return try {
+            val param = JSONObject().put("From", 0).put("Size", limit)
+            val resp = MusicU.call(TAG_PLAYLIST_SQUARE, METHOD_RECOMMEND_FEED, param, ct = ct, cv = cv)
+            val data = resp.data(MusicU.DEFAULT_KEY)
+            val list = data?.optJSONArray("List")
+            if (list == null) {
+                Diag.i(
+                    "Discover",
+                    "推荐歌单无 data.List, 顶层键=[${data?.keys()?.asSequence()?.joinToString(",")}]"
+                )
+                return emptyList()
+            }
+            val out = ArrayList<Playlist>(list.length())
+            val seen = HashSet<Long>(list.length())
+            for (i in 0 until list.length()) {
+                val basic = list.optJSONObject(i)
+                    ?.optJSONObject("Playlist")
+                    ?.optJSONObject("basic") ?: continue
+                val tid = basic.optLong("tid", 0L)
+                if (tid <= 0L || !seen.add(tid)) continue
+                val cover = basic.optJSONObject("cover")
+                val pic = cover?.optString("default_url").orEmpty()
+                    .ifEmpty { cover?.optString("big_url").orEmpty() }
+                    .ifEmpty { cover?.optString("medium_url").orEmpty() }
+                    .ifEmpty { cover?.optString("small_url").orEmpty() }
+                val creator = basic.optJSONObject("creator")
+                out.add(
+                    Playlist(
+                        id = tid,
+                        disstid = tid.toString(),
+                        tid = tid,
+                        title = basic.optString("title", ""),
+                        cover = pic,
+                        songCount = basic.optInt("song_cnt", 0),
+                        playCount = basic.optLong("play_cnt", 0L),
+                        creator = creator?.optString("nick", "").orEmpty(),
+                        creatorUin = creator?.optString("encrypt_uin", "").orEmpty(),
+                        desc = basic.optString("desc", ""),
+                        type = Playlist.TYPE_PLAYLIST
+                    )
+                )
+                if (out.size >= limit) break
+            }
+            Diag.i("Discover", "推荐歌单(广场推荐流) ${out.size} 个")
+            out
+        } catch (t: Throwable) {
+            Diag.e("Discover", "广场推荐流失败, 将退回 legacy", t)
+            emptyList()
+        }
+    }
+
+    /** 兜底: legacy 歌单广场 (未登录也能用, 但只是热门歌单, 不个性化) */
+    private fun squareByTag(limit: Int): List<Playlist> {
         val url = "https://c.y.qq.com/splcloud/fcgi-bin/fcg_get_diss_by_tag.fcg" +
             "?picmid=1&rnd=0.1&g_tk=5381&loginUin=0&hostUin=0&format=json" +
             "&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0" +
@@ -470,6 +675,12 @@ object DiscoverApi {
 
     const val TOP_HOT = 26     // 热歌榜 (注意是 26, 不是 4)
     const val TOP_NEW = 27     // 新歌榜
+
+    /** 推荐歌单单次最多 60 张, 与上游一致 */
+    private const val MAX_RECOMMEND_PLAYLISTS = 60
+
+    private const val TAG_PLAYLIST_SQUARE = "music.playlist.PlaylistSquare"
+    private const val METHOD_RECOMMEND_FEED = "GetRecommendFeed"
 }
 
 /** 歌单 / 专辑 / 榜单详情 */

@@ -95,11 +95,15 @@ object Store {
 
         // 播放
         const val PLAY_FADE = "play_fade"                 // 0 无缝 1 淡入淡出
+        const val LYRIC_SCALE = "lyric_text_scale"        // 歌词字号, 百分比整数(85/100/125/150)
         const val VOLUME_BALANCE = "volume_balance"       // 音量平衡
         const val LOUDNESS_ADAPT = "loudness_adapt"       // 响度自适应
 
         // 存储
-        const val CACHE_LIMIT_MB = "cache_limit_mb"
+        const val CACHE_DATA_MB = "cache_data_mb"
+
+    /** 最后一次起播时缓存下来的音频文件名, 启动时只保留它一个 */
+    const val LAST_CACHE_NAME = "last_cache_name"
         const val CACHE_IMAGE_MB = "cache_image_mb"
         const val CACHE_META_MB = "cache_meta_mb"
         const val CACHE_LYRIC_MB = "cache_lyric_mb"

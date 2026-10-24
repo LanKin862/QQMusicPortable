@@ -47,6 +47,11 @@ class App : Application() {
             // 下载元信息 (真实时长/封面/原曲 mid) 的懒加载需要 application context
             com.portable.qqmusic.data.DownloadManager.init(this)
 
+            // 歌曲缓存只在当次播放有用: 启动时清干净, 只留上次正在放的那一首
+            com.portable.qqmusic.data.CacheManager.pruneAudio(
+                this, Store.str(Store.K.LAST_CACHE_NAME)
+            )
+
             // 旧版本的音频缓存放在 cacheDir/cache 下, 现在统一挪到 filesDir/cache/{audio,image,meta}。
             // 老目录再也不会被读到, 留着只是白占空间, 这里一次性删掉。
             cleanupLegacyCache()

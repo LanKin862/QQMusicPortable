@@ -41,45 +41,26 @@ object Settings {
 
     // ---------------- 存储 ----------------
 
-    /** 音乐缓存上限 (MB), 0 表示不限制 */
-    fun cacheLimitMb(): Int = Store.int(Store.K.CACHE_LIMIT_MB, DEFAULT_CACHE_MB)
+    /**
+     * 缓存上限 (MB): 歌单数据 + 封面 + 歌词三者之和, 0 表示不限制。
+     *
+     * 歌曲缓存不再计入, 也不再单独设上限 —— 它在每次启动时清掉, 只留当前播放那一首。
+     */
+    fun cacheDataMb(): Int = Store.int(Store.K.CACHE_DATA_MB, DEFAULT_DATA_MB)
 
-    fun setCacheLimitMb(mb: Int) = Store.putInt(Store.K.CACHE_LIMIT_MB, mb)
+    fun setCacheDataMb(mb: Int) = Store.putInt(Store.K.CACHE_DATA_MB, mb)
 
     fun downloadLocation(): StorageLocation = Storage.location()
 
     fun setDownloadLocation(loc: StorageLocation) = Store.putStr(Store.K.DOWNLOAD_DIR, loc.name)
 
-    const val DEFAULT_CACHE_MB = 1024
+    const val DEFAULT_DATA_MB = 300
 
     /** 缓存上限候选项 (MB) */
-    val CACHE_OPTIONS = intArrayOf(256, 512, 1024, 2048, 4096, 0)
+    val CACHE_DATA_OPTIONS = intArrayOf(100, 200, 300, 500, 1024, 2048, 0)
 
-    fun cacheLimitLabel(mb: Int): String = if (mb <= 0) "不限制" else if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
-
-    // ---- 分层配额 ----
-    // 封面/歌单/译文各自封顶, 与总上限独立: 总量超了先清歌曲缓存, 这三层只在超自己配额时才动。
-    // 译文和歌单重新拉取代价最高, 所以给同样的 100MB 起步, 用户还能单独调。
-
-    /** 封面缓存上限 (MB) */
-    fun cacheImageMb(): Int = Store.int(Store.K.CACHE_IMAGE_MB, DEFAULT_TIER_MB)
-
-    fun setCacheImageMb(mb: Int) = Store.putInt(Store.K.CACHE_IMAGE_MB, mb)
-
-    /** 歌单数据缓存上限 (MB) */
-    fun cacheMetaMb(): Int = Store.int(Store.K.CACHE_META_MB, DEFAULT_TIER_MB)
-
-    fun setCacheMetaMb(mb: Int) = Store.putInt(Store.K.CACHE_META_MB, mb)
-
-    /** 歌词与译文缓存上限 (MB) */
-    fun cacheLyricMb(): Int = Store.int(Store.K.CACHE_LYRIC_MB, DEFAULT_TIER_MB)
-
-    fun setCacheLyricMb(mb: Int) = Store.putInt(Store.K.CACHE_LYRIC_MB, mb)
-
-    const val DEFAULT_TIER_MB = 100
-
-    /** 分层配额的候选项, 0 表示这一层不限 */
-    val CACHE_TIER_OPTIONS = intArrayOf(50, 100, 200, 500, 1024, 0)
+    fun cacheLimitLabel(mb: Int): String =
+        if (mb <= 0) "不限制" else if (mb >= 1024) "${mb / 1024} GB" else "$mb MB"
 
     // ---------------- 播放器状态 ----------------
 
